@@ -8,23 +8,43 @@ from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
 from reportlab.lib.units import inch
 from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer, Table,
-                                 TableStyle, HRFlowable, KeepTogether)
+                                 TableStyle, HRFlowable)
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY, TA_RIGHT
 
 app = Flask(__name__)
 
-# ── Colour palette ──────────────────────────────────────────────
-GOLD        = colors.HexColor('#B8960C')
-GOLD_LIGHT  = colors.HexColor('#F5E6A3')
-GOLD_ROW    = colors.HexColor('#FAF7EE')
-DARK        = colors.HexColor('#1A1A1A')
-MID         = colors.HexColor('#444444')
-SUBTLE      = colors.HexColor('#777777')
-RULE        = colors.HexColor('#D4B86A')
-WHITE       = colors.white
+ALMOST_BLACK = colors.HexColor('#0F0F0F')
+DARK         = colors.HexColor('#1A1A1A')
+MID          = colors.HexColor('#3A3A3A')
+SUBTLE       = colors.HexColor('#888888')
+LIGHT_GREY   = colors.HexColor('#E8E8E8')
+WARM_WHITE   = colors.HexColor('#F9F7F4')
+GOLD         = colors.HexColor('#C4A97D')
+WHITE        = colors.white
 
-W = letter[0] - 1.7 * inch   # usable text width
+PAGE_W, PAGE_H = letter
+MARGIN = 0.85 * inch
+W = PAGE_W - 2 * MARGIN
+
+
+def cover_page_canvas(canvas, doc):
+    canvas.saveState()
+    if doc.page == 1:
+        band_h = 3.2 * inch
+        canvas.setFillColor(ALMOST_BLACK)
+        canvas.rect(0, PAGE_H - band_h, PAGE_W, band_h, fill=1, stroke=0)
+        canvas.setStrokeColor(GOLD)
+        canvas.setLineWidth(0.8)
+        canvas.line(MARGIN, PAGE_H - band_h, PAGE_W - MARGIN, PAGE_H - band_h)
+    canvas.setFont('Times-Italic', 8)
+    canvas.setFillColor(SUBTLE)
+    footer_y = 0.45 * inch
+    canvas.drawString(MARGIN, footer_y, doc._studio)
+    canvas.drawRightString(PAGE_W - MARGIN, footer_y,
+                           f"Private & Confidential · Prepared for {doc._client}")
+    canvas.drawCentredString(PAGE_W / 2, footer_y, f"— {doc.page} —")
+    canvas.restoreState()
 
 
 def make_styles():
@@ -33,80 +53,68 @@ def make_styles():
     def add(name, **kw):
         s.add(ParagraphStyle(name=name, **kw))
 
-    add('StudioName',
-        fontName='Times-BoldItalic', fontSize=10,
-        textColor=GOLD, alignment=TA_CENTER, spaceAfter=6)
-
-    add('DocTitle',
-        fontName='Times-Bold', fontSize=26,
-        textColor=DARK, alignment=TA_CENTER, spaceAfter=6)
-
-    add('ClientLine',
-        fontName='Times-Italic', fontSize=12,
-        textColor=MID, alignment=TA_CENTER, spaceAfter=4)
-
-    add('CityLine',
-        fontName='Times-Roman', fontSize=10,
-        textColor=SUBTLE, alignment=TA_CENTER, spaceAfter=20)
-
+    add('CoverStudio',
+        fontName='Times-Roman', fontSize=9,
+        textColor=GOLD, alignment=TA_CENTER, spaceAfter=6, leading=12)
+    add('CoverTitle',
+        fontName='Times-Bold', fontSize=28,
+        textColor=WHITE, alignment=TA_CENTER, spaceAfter=8, leading=34)
+    add('CoverSubtitle',
+        fontName='Times-Italic', fontSize=13,
+        textColor=colors.HexColor('#CCCCCC'), alignment=TA_CENTER,
+        spaceAfter=4, leading=18)
+    add('CoverYear',
+        fontName='Times-Roman', fontSize=9,
+        textColor=GOLD, alignment=TA_CENTER, spaceAfter=0, leading=12)
     add('SectionNum',
-        fontName='Times-Bold', fontSize=8,
-        textColor=GOLD, alignment=TA_LEFT, spaceBefore=22, spaceAfter=2,
-        leading=10)
-
+        fontName='Times-Roman', fontSize=22,
+        textColor=LIGHT_GREY, alignment=TA_LEFT,
+        spaceBefore=28, spaceAfter=0, leading=26)
     add('SectionTitle',
-        fontName='Times-Bold', fontSize=14,
-        textColor=DARK, alignment=TA_LEFT, spaceBefore=2, spaceAfter=8,
-        leading=18)
-
+        fontName='Times-Bold', fontSize=13,
+        textColor=DARK, alignment=TA_LEFT,
+        spaceBefore=2, spaceAfter=10, leading=17)
     add('SubHead',
         fontName='Times-Bold', fontSize=10.5,
-        textColor=GOLD, alignment=TA_LEFT, spaceBefore=10, spaceAfter=4,
-        leading=14)
-
+        textColor=MID, alignment=TA_LEFT,
+        spaceBefore=12, spaceAfter=4, leading=14)
     add('Body',
-        fontName='Times-Roman', fontSize=10,
+        fontName='Times-Roman', fontSize=10.5,
         textColor=DARK, alignment=TA_JUSTIFY,
-        leading=15.5, spaceAfter=6)
-
+        leading=16.5, spaceAfter=8)
     add('BulletItem',
-        fontName='Times-Roman', fontSize=10,
+        fontName='Times-Roman', fontSize=10.5,
         textColor=DARK, alignment=TA_LEFT,
-        leading=15, spaceAfter=3, leftIndent=14, firstLineIndent=-10)
-
+        leading=16, spaceAfter=4, leftIndent=16, firstLineIndent=-12)
     add('Signature',
-        fontName='Times-Italic', fontSize=11.5,
+        fontName='Times-Italic', fontSize=12,
         textColor=MID, alignment=TA_CENTER,
-        leading=18, spaceBefore=14, spaceAfter=14)
-
-    add('PreparedBy',
+        leading=19, spaceBefore=16, spaceAfter=16)
+    add('SignatureAttr',
         fontName='Times-Roman', fontSize=9,
-        textColor=SUBTLE, alignment=TA_LEFT, spaceAfter=2)
-
+        textColor=SUBTLE, alignment=TA_CENTER, spaceAfter=4)
+    add('MetaLine',
+        fontName='Times-Roman', fontSize=8.5,
+        textColor=SUBTLE, alignment=TA_LEFT, spaceAfter=2, leading=12)
+    add('FooterCity',
+        fontName='Times-Roman', fontSize=9,
+        textColor=SUBTLE, alignment=TA_CENTER, spaceAfter=0)
     return s
 
 
-def gold_rule(full=True):
-    w = '100%' if full else '35%'
-    return HRFlowable(width=w, thickness=0.8, color=RULE, spaceAfter=6, spaceBefore=2)
+def thin_rule(color=None, width='100%', thickness=0.5):
+    c = color if color else LIGHT_GREY
+    return HRFlowable(width=width, thickness=thickness,
+                      color=c, spaceAfter=6, spaceBefore=4)
 
 
-def section_rule():
-    return HRFlowable(width='100%', thickness=0.4,
-                      color=colors.HexColor('#E8E0CC'),
-                      spaceAfter=4, spaceBefore=0)
+def gold_rule():
+    return HRFlowable(width='100%', thickness=0.8,
+                      color=GOLD, spaceAfter=8, spaceBefore=8)
 
 
 def parse_section_header(line):
-    """
-    Accepts lines like:
-      '1. DESIGN VISION'
-      '**1. Design Vision**'
-      '## 1. Design Vision'
-    Returns (number_str, title_str) or (None, None).
-    """
-    line = line.strip().lstrip('#').strip()
-    line = line.strip('*').strip()
+    line = line.strip().lstrip('#').strip().strip('*').strip()
     m = re.match(r'^(\d+)[.)]\s+(.+)$', line)
     if m:
         return m.group(1), m.group(2).title()
@@ -123,89 +131,78 @@ def parse_table_row(line):
 
 
 def build_investment_table(rows):
-    """Render the investment breakdown as a styled two-column table."""
+    if not rows:
+        return None
     data = []
     for row in rows:
         if len(row) == 1:
             data.append([row[0], ''])
         else:
             data.append(row[:2])
-
-    if not data:
-        return None
-
-    col_w = [W * 0.65, W * 0.35]
+    col_w = [W * 0.62, W * 0.38]
     t = Table(data, colWidths=col_w, repeatRows=1)
-
-    style = [
-        # header row
-        ('BACKGROUND',   (0, 0), (-1, 0), GOLD),
-        ('TEXTCOLOR',    (0, 0), (-1, 0), WHITE),
-        ('FONTNAME',     (0, 0), (-1, 0), 'Times-Bold'),
-        ('FONTSIZE',     (0, 0), (-1, 0), 10),
-        ('ALIGN',        (1, 0), (1, 0),  'RIGHT'),
-        # body rows
-        ('FONTNAME',     (0, 1), (-1, -1), 'Times-Roman'),
-        ('FONTSIZE',     (0, 1), (-1, -1), 9.5),
-        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [WHITE, GOLD_ROW]),
-        ('ALIGN',        (1, 1), (1, -1),  'RIGHT'),
-        ('TEXTCOLOR',    (0, 1), (-1, -1), DARK),
-        # grid
-        ('GRID',         (0, 0), (-1, -1), 0.4, colors.HexColor('#DDDDDD')),
-        ('LINEBELOW',    (0, 0), (-1, 0),  1.2, GOLD),
-        # padding
-        ('TOPPADDING',   (0, 0), (-1, -1), 6),
-        ('BOTTOMPADDING',(0, 0), (-1, -1), 6),
-        ('LEFTPADDING',  (0, 0), (-1, -1), 9),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 9),
-    ]
-    t.setStyle(TableStyle(style))
+    t.setStyle(TableStyle([
+        ('BACKGROUND',    (0, 0), (-1, 0), ALMOST_BLACK),
+        ('TEXTCOLOR',     (0, 0), (-1, 0), WHITE),
+        ('FONTNAME',      (0, 0), (-1, 0), 'Times-Bold'),
+        ('FONTSIZE',      (0, 0), (-1, 0), 9),
+        ('ALIGN',         (1, 0), (1, 0),  'RIGHT'),
+        ('TOPPADDING',    (0, 0), (-1, 0), 8),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+        ('FONTNAME',      (0, 1), (-1, -1), 'Times-Roman'),
+        ('FONTSIZE',      (0, 1), (-1, -1), 10),
+        ('TEXTCOLOR',     (0, 1), (-1, -1), DARK),
+        ('ALIGN',         (1, 1), (1, -1),  'RIGHT'),
+        ('ROWBACKGROUNDS',(0, 1), (-1, -1), [WHITE, WARM_WHITE]),
+        ('FONTNAME',      (0, -1), (-1, -1), 'Times-Bold'),
+        ('TEXTCOLOR',     (0, -1), (-1, -1), ALMOST_BLACK),
+        ('LINEABOVE',     (0, -1), (-1, -1), 0.8, GOLD),
+        ('GRID',          (0, 0), (-1, -1), 0.3, LIGHT_GREY),
+        ('LINEBELOW',     (0, 0), (-1, 0),  1,   GOLD),
+        ('TOPPADDING',    (0, 1), (-1, -1), 7),
+        ('BOTTOMPADDING', (0, 1), (-1, -1), 7),
+        ('LEFTPADDING',   (0, 0), (-1, -1), 10),
+        ('RIGHTPADDING',  (0, 0), (-1, -1), 10),
+    ]))
     return t
 
 
-def build_pdf(proposal_text, designer_name, client_name, city):
+def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
-        buffer,
-        pagesize=letter,
-        rightMargin=0.85 * inch,
-        leftMargin=0.85 * inch,
-        topMargin=0.9 * inch,
-        bottomMargin=0.9 * inch,
+        buffer, pagesize=letter,
+        rightMargin=MARGIN, leftMargin=MARGIN,
+        topMargin=MARGIN, bottomMargin=0.85 * inch,
     )
+    doc._studio = f"{designer_name} Studio"
+    doc._client = client_name
+
     S = make_styles()
     story = []
 
-    # ── Cover header ────────────────────────────────────────────
-    story.append(Paragraph(f"{designer_name} Studio", S['StudioName']))
-    story.append(gold_rule(full=True))
-    story.append(Spacer(1, 10))
-    story.append(Paragraph("Interior Design Proposal", S['DocTitle']))
-    story.append(Spacer(1, 4))
-    story.append(Paragraph(client_name, S['ClientLine']))
-    story.append(Paragraph(city, S['CityLine']))
-    story.append(gold_rule(full=True))
+    # Cover band content
+    story.append(Spacer(1, 0.35 * inch))
+    story.append(Paragraph(designer_name.upper(), S['CoverStudio']))
     story.append(Spacer(1, 6))
+    story.append(Paragraph("Interior Design", S['CoverSubtitle']))
+    story.append(Paragraph("Proposal", S['CoverTitle']))
+    story.append(Spacer(1, 4))
+    story.append(Paragraph(f"Prepared exclusively for {client_name}", S['CoverSubtitle']))
+    story.append(Paragraph(f"{city} Residence", S['CoverSubtitle']))
+    story.append(Spacer(1, 6))
+    story.append(Paragraph("2026", S['CoverYear']))
+    story.append(Spacer(1, 1.6 * inch))
 
-    # Prepared-by line
     story.append(Paragraph(
-        f"Prepared by: <b>{designer_name} Studio</b>&nbsp;&nbsp;·&nbsp;&nbsp;"
-        f"Client: <b>{client_name}</b>&nbsp;&nbsp;·&nbsp;&nbsp;City: <b>{city}</b>",
-        S['PreparedBy']))
-    story.append(section_rule())
-    story.append(Spacer(1, 10))
+        f"{designer_name} Studio &nbsp;·&nbsp; Private &amp; Confidential &nbsp;·&nbsp; "
+        f"Prepared for {client_name}", S['MetaLine']))
+    story.append(thin_rule())
+    story.append(Spacer(1, 16))
 
-    # ── Body parsing ────────────────────────────────────────────
     lines = proposal_text.splitlines()
     i = 0
-    current_section_block = []   # accumulate a section's flowables for KeepTogether
-
-    def flush_block():
-        if current_section_block:
-            story.extend(current_section_block)
-            current_section_block.clear()
-
     table_rows = []
+    section_counter = 0
 
     while i < len(lines):
         raw = lines[i]
@@ -213,46 +210,41 @@ def build_pdf(proposal_text, designer_name, client_name, city):
         i += 1
 
         if not line:
-            # blank line = paragraph break; flush any pending table
             if table_rows:
                 t = build_investment_table(table_rows)
                 if t:
                     story.append(t)
-                    story.append(Spacer(1, 8))
+                    story.append(Spacer(1, 12))
                 table_rows = []
             continue
 
-        # ── Section header ──
         num, title = parse_section_header(line)
         if num:
             if table_rows:
                 t = build_investment_table(table_rows)
                 if t:
                     story.append(t)
-                    story.append(Spacer(1, 8))
+                    story.append(Spacer(1, 12))
                 table_rows = []
-            story.append(Spacer(1, 8))
-            story.append(section_rule())
-            story.append(Paragraph(f"— {num} —", S['SectionNum']))
+            section_counter += 1
+            num_str = str(section_counter).zfill(2)
+            story.append(Spacer(1, 6))
+            story.append(thin_rule())
+            story.append(Paragraph(num_str, S['SectionNum']))
             story.append(Paragraph(title, S['SectionTitle']))
             continue
 
-        # ── Markdown-style bold header (all-caps sub-heading) ──
         if line.startswith('**') and line.endswith('**'):
-            text = line.strip('*').strip()
-            story.append(Paragraph(text.title(), S['SubHead']))
+            story.append(Paragraph(line.strip('*').strip().title(), S['SubHead']))
             continue
 
-        # ── ALL-CAPS sub-heading (room names etc.) ──
-        if line.isupper() and len(line) > 2 and '|' not in line:
+        if line.isupper() and 2 < len(line) < 60 and '|' not in line:
             story.append(Paragraph(line.title(), S['SubHead']))
             continue
 
-        # ── Separator dashes (----, ====) → ignore ──
         if re.match(r'^[-=]{3,}$', line):
             continue
 
-        # ── Table row ──
         if '|' in line:
             if not is_table_separator(line):
                 row = parse_table_row(line)
@@ -260,47 +252,44 @@ def build_pdf(proposal_text, designer_name, client_name, city):
                     table_rows.append(row)
             continue
 
-        # ── Flush table before non-table content ──
         if table_rows:
             t = build_investment_table(table_rows)
             if t:
                 story.append(t)
-                story.append(Spacer(1, 8))
+                story.append(Spacer(1, 12))
             table_rows = []
 
-        # ── Italic signature line (*text*) ──
         if line.startswith('*') and line.endswith('*') and not line.startswith('**'):
+            story.append(Spacer(1, 8))
+            story.append(thin_rule(width='60%'))
             story.append(Paragraph(line.strip('*').strip(), S['Signature']))
+            story.append(Paragraph(f"— {designer_name}", S['SignatureAttr']))
+            story.append(thin_rule(width='60%'))
             continue
 
-        # ── Bullet point ──
         if line.startswith(('- ', '• ', '* ')):
-            story.append(Paragraph('• ' + line[2:], S['BulletItem']))
+            story.append(Paragraph('— &nbsp;' + line[2:], S['BulletItem']))
             continue
 
-        # ── Regular body paragraph ──
         story.append(Paragraph(line, S['Body']))
 
-    # flush any trailing table
     if table_rows:
         t = build_investment_table(table_rows)
         if t:
             story.append(t)
-            story.append(Spacer(1, 8))
+            story.append(Spacer(1, 12))
 
-    # ── Footer rule ──
-    story.append(Spacer(1, 20))
-    story.append(gold_rule(full=True))
+    story.append(Spacer(1, 24))
+    story.append(gold_rule())
     story.append(Paragraph(
-        f"{designer_name} Studio &nbsp;·&nbsp; Confidential Proposal &nbsp;·&nbsp; {city}",
-        S['CityLine']))
+        f"{designer_name} Studio &nbsp;·&nbsp; {city}", S['FooterCity']))
+    if designer_email:
+        story.append(Paragraph(designer_email, S['FooterCity']))
 
-    doc.build(story)
+    doc.build(story, onFirstPage=cover_page_canvas, onLaterPages=cover_page_canvas)
     buffer.seek(0)
     return buffer.read()
 
-
-# ── Routes ──────────────────────────────────────────────────────
 
 @app.route('/health', methods=['GET'])
 def health():
@@ -314,45 +303,42 @@ def generate():
         if not data:
             return jsonify({"error": "No JSON body"}), 400
 
-        proposal_text  = data.get('proposal_text', '')
-        designer       = data.get('designer', 'Your Designer')
-        client         = data.get('client', 'Valued Client')
-        city           = data.get('city', '')
+        proposal_text   = data.get('proposal_text', '')
+        designer        = data.get('designer', 'Your Designer')
+        client          = data.get('client', 'Valued Client')
+        city            = data.get('city', '')
         recipient_email = data.get('recipient_email', '')
 
         if not recipient_email:
             return jsonify({"error": "recipient_email required"}), 400
 
-        pdf_bytes = build_pdf(proposal_text, designer, client, city)
+        designer_email = recipient_email
+
+        pdf_bytes = build_pdf(proposal_text, designer, client, city, designer_email)
         pdf_b64   = base64.b64encode(pdf_bytes).decode('utf-8')
 
         resend.api_key = os.environ.get('RESEND_API_KEY', '')
         from_email     = os.environ.get('FROM_EMAIL', 'onboarding@resend.dev')
 
-        filename = (f"Proposal_{client.replace(' ','_')}"
-                    f"_{city.replace(' ','_')}.pdf")
-
-        designer_email = recipient_email
+        filename = (f"Proposal_{client.replace(' ', '_')}"
+                    f"_{city.replace(' ', '_')}.pdf")
 
         params = {
             "from": from_email,
             "to":   ["vanshgupta0004@gmail.com"],
-            "subject": f"Your Interior Design Proposal — {client}, {city} | {designer_email}",
+            "subject": (f"Your Interior Design Proposal — "
+                        f"{client}, {city} | {designer_email}"),
             "html": f"""
-<div style="font-family:Georgia,serif;max-width:600px;margin:0 auto;
-            color:#1a1a1a;line-height:1.7;">
-  <p style="color:#B8960C;font-style:italic;margin-bottom:4px;">
-    From the studio of {designer}</p>
-  <h2 style="font-size:22px;margin-bottom:8px;">Your proposal is ready.</h2>
-  <p>Please find attached your bespoke interior design proposal for
-     <strong>{client}</strong> in {city}.</p>
-  <p>This document outlines your full design vision, room-by-room direction,
-     investment breakdown, and project timeline.</p>
-  <p style="color:#555;font-size:13px;">
-     If you have any questions, simply reply to this email.</p>
-  <hr style="border:none;border-top:1px solid #B8960C;margin:24px 0;"/>
-  <p style="font-style:italic;color:#999;font-size:12px;">
-     {designer} Studio · Powered by Vansh Craft</p>
+<div style="font-family:Georgia,serif;max-width:600px;margin:0 auto;color:#1a1a1a;line-height:1.7;">
+  <div style="background:#0F0F0F;padding:32px 36px 28px;margin-bottom:24px;">
+    <p style="color:#C4A97D;font-size:10px;letter-spacing:3px;margin:0 0 8px;text-transform:uppercase;">{designer.upper()} STUDIO</p>
+    <h1 style="color:#ffffff;font-size:22px;margin:0 0 6px;font-weight:normal;font-style:italic;">Your proposal is ready.</h1>
+    <p style="color:#AAAAAA;font-size:13px;margin:0;">Prepared for <strong style="color:#fff;">{client}</strong> · {city}</p>
+  </div>
+  <p style="padding:0 4px;">Please find attached your bespoke interior design proposal. This document outlines the full design vision, room-by-room direction, investment breakdown, and project timeline.</p>
+  <p style="color:#555;font-size:13px;padding:0 4px;">If you have any questions, simply reply to this email.</p>
+  <hr style="border:none;border-top:1px solid #C4A97D;margin:24px 0;"/>
+  <p style="font-style:italic;color:#999;font-size:12px;padding:0 4px;">{designer} Studio · Powered by Vansh Craft</p>
 </div>""",
             "attachments": [{
                 "filename": filename,
@@ -361,7 +347,8 @@ def generate():
         }
 
         resend.Emails.send(params)
-        return jsonify({"status": "sent", "to": recipient_email}), 200
+        return jsonify({"status": "sent", "to": "vanshgupta0004@gmail.com",
+                        "designer": designer_email}), 200
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
