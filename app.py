@@ -298,9 +298,20 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
 
         # Auto-detect plain budget lines in investment section
         if in_investment_section:
+            # Skip the recommendation sentence
+            if 'recommend positioning' in line.lower():
+                story.append(Paragraph(line, S['Body']))
+                continue
+            # Skip lines that look like table headers (Category / Estimated Range)
+            if re.match(r'^category\s+estimated', line.lower()):
+                continue
+            # Skip pure description lines that follow a budget row (no $ sign, short)
             budget_row = try_parse_budget_line(line)
             if budget_row:
                 table_rows.append(budget_row)
+                continue
+            # If it's a short descriptor line after a budget line, skip it
+            if table_rows and len(table_rows) > 1 and '$' not in line and len(line) < 120:
                 continue
 
         story.append(Paragraph(line, S['Body']))
