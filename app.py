@@ -130,18 +130,20 @@ def is_table_separator(line):
 
 
 def try_parse_budget_line(line):
-    """Detect plain-text budget lines like 'Design Services: $8,000–$24,000'
-    and convert them to a two-element list for table rendering."""
-    # Match: Label: $X,XXX–$Y,YYY or $X,XXX - $Y,YYY or $X,XXX – $Y,YYY
-    m = re.match(r'^(.{3,80}):\s+(\$[\d,]+\s*[\u2013\u2014-]+\s*\$[\d,]+.*)$', line)
+    """Detect budget lines in any format Claude outputs and convert to [label, range]."""
+    # Format 1: "Label: $X–$Y" or "Label: $X — $Y"
+    m = re.match(r'^(.{3,80}):\s+(\$[\d,]+\s*[\u2013\u2014-]+\s*\$[\d,]+.*?)(?:\s*\(.*\))?$', line)
     if m:
         return [m.group(1).strip(), m.group(2).strip()]
-    # Match total/single dollar lines: Label: $XX,XXX
-    m2 = re.match(r'^(.{3,80}):\s+(\$[\d,]+.{0,30})$', line)
-    if m2 and not m2.group(1).strip().startswith('http'):
+    # Format 2: "Label $X — $Y (description)" — no colon, space-separated
+    m2 = re.match(r'^((?:[A-Za-z&,/\s]+))\s+(\$[\d,]+\s*[\u2013\u2014-]+\s*\$[\d,]+)', line)
+    if m2 and len(m2.group(1).strip()) > 3:
         return [m2.group(1).strip(), m2.group(2).strip()]
+    # Format 3: "Label: $XX,XXX" (total/single value line)
+    m3 = re.match(r'^(.{3,80}):\s+(\$[\d,\s]+?)(?:\s*\(.*\))?$', line)
+    if m3 and not m3.group(1).startswith('http') and '$' in m3.group(2):
+        return [m3.group(1).strip(), m3.group(2).strip()]
     return None
-
 
 def parse_table_row(line):
     parts = [c.strip() for c in line.strip().strip('|').split('|')]
