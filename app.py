@@ -332,7 +332,7 @@ def generate():
         filename = (f"Proposal_{client.replace(' ','_')}"
                     f"_{city.replace(' ','_')}.pdf")
 
-      designer_email = recipient_email
+        designer_email = recipient_email
 
         params = {
             "from": from_email,
