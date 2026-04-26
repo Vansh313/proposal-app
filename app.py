@@ -117,7 +117,11 @@ def parse_section_header(line):
     line = line.strip().lstrip('#').strip().strip('*').strip()
     m = re.match(r'^(\d+)[.)]\s+(.+)$', line)
     if m:
-        return m.group(1), m.group(2).title()
+        num = int(m.group(1))
+        title = m.group(2).strip()
+        # Only treat as section header if 1-9 and short title (not a next-step item)
+        if 1 <= num <= 9 and len(title) < 60:
+            return m.group(1), title.title()
     return None, None
 
 
