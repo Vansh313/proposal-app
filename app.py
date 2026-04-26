@@ -371,7 +371,7 @@ def generate():
         if not recipient_email:
             return jsonify({"error": "recipient_email required"}), 400
 
-        designer_email = recipient_email
+        designer_email = data.get('designer_email', recipient_email)
         studio_sfx = "" if designer.lower().rstrip().endswith("studio") else " Studio"
         designer_studio = f"{designer}{studio_sfx}"
 
