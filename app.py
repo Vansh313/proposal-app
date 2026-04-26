@@ -130,14 +130,15 @@ def is_table_separator(line):
 
 
 def try_parse_budget_line(line):
-    """Detect plain-text budget lines like 'Design Services: $8,000 – $12,000'
+    """Detect plain-text budget lines like 'Design Services: $8,000–$24,000'
     and convert them to a two-element list for table rendering."""
-    m = re.match(r'^(.+?):\s+(\$[\d,]+\s*[–-]\s*\$[\d,]+.*)$', line)
+    # Match: Label: $X,XXX–$Y,YYY or $X,XXX - $Y,YYY or $X,XXX – $Y,YYY
+    m = re.match(r'^(.{3,80}):\s+(\$[\d,]+\s*[\u2013\u2014-]+\s*\$[\d,]+.*)$', line)
     if m:
         return [m.group(1).strip(), m.group(2).strip()]
-    # Also match total lines like 'Total Investment Range: $48,000 – $65,000'
-    m2 = re.match(r'^(.{5,80}):\s+(\$[\d,].*)$', line)
-    if m2:
+    # Match total/single dollar lines: Label: $XX,XXX
+    m2 = re.match(r'^(.{3,80}):\s+(\$[\d,]+.{0,30})$', line)
+    if m2 and not m2.group(1).strip().startswith('http'):
         return [m2.group(1).strip(), m2.group(2).strip()]
     return None
 
