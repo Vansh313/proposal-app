@@ -129,6 +129,19 @@ def is_table_separator(line):
     return bool(re.match(r'^[\s|:\-]+$', line))
 
 
+def try_parse_budget_line(line):
+    """Detect plain-text budget lines like 'Design Services: $8,000 – $12,000'
+    and convert them to a two-element list for table rendering."""
+    m = re.match(r'^(.+?):\s+(\$[\d,]+\s*[–-]\s*\$[\d,]+.*)$', line)
+    if m:
+        return [m.group(1).strip(), m.group(2).strip()]
+    # Also match total lines like 'Total Investment Range: $48,000 – $65,000'
+    m2 = re.match(r'^(.{5,80}):\s+(\$[\d,].*)$', line)
+    if m2:
+        return [m2.group(1).strip(), m2.group(2).strip()]
+    return None
+
+
 def parse_table_row(line):
     parts = [c.strip() for c in line.strip().strip('|').split('|')]
     return [p for p in parts if p]
@@ -207,6 +220,7 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
     i = 0
     table_rows = []
     section_counter = 0
+    in_investment_section = False
 
     while i < len(lines):
         raw = lines[i]
@@ -232,10 +246,16 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
                 table_rows = []
             section_counter += 1
             num_str = str(section_counter).zfill(2)
+            # Track when we enter the investment section
+            in_investment_section = ('investment' in title.lower() or
+                                     'budget' in title.lower())
             story.append(Spacer(1, 6))
             story.append(thin_rule())
             story.append(Paragraph(num_str, S['SectionNum']))
             story.append(Paragraph(title, S['SectionTitle']))
+            # Add table header row automatically for investment section
+            if in_investment_section:
+                table_rows = [['Category', 'Estimated Range']]
             continue
 
         if line.startswith('**') and line.endswith('**'):
@@ -274,6 +294,13 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
         if line.startswith(('- ', '• ', '* ')):
             story.append(Paragraph('— &nbsp;' + line[2:], S['BulletItem']))
             continue
+
+        # Auto-detect plain budget lines in investment section
+        if in_investment_section:
+            budget_row = try_parse_budget_line(line)
+            if budget_row:
+                table_rows.append(budget_row)
+                continue
 
         story.append(Paragraph(line, S['Body']))
 
