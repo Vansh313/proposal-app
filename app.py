@@ -132,6 +132,8 @@ def is_table_separator(line):
 
 def try_parse_budget_line(line):
     """Detect budget lines in any format Claude outputs and convert to [label, range]."""
+    # Strip leading bullet/dash markers like "— " or "- "
+    line = re.sub(r'^[\-–—\•]\s+', '', line.strip())
     # Format 1: "Label: $X–$Y" or "Label: $X — $Y"
     m = re.match(r'^(.{3,80}):\s+(\$[\d,]+\s*[\u2013\u2014-]+\s*\$[\d,]+.*?)(?:\s*\(.*\))?$', line)
     if m:
@@ -370,6 +372,8 @@ def generate():
             return jsonify({"error": "recipient_email required"}), 400
 
         designer_email = recipient_email
+        studio_sfx = "" if designer.lower().rstrip().endswith("studio") else " Studio"
+        designer_studio = f"{designer}{studio_sfx}"
 
         pdf_bytes = build_pdf(proposal_text, designer, client, city, designer_email)
         pdf_b64   = base64.b64encode(pdf_bytes).decode('utf-8')
@@ -395,7 +399,7 @@ def generate():
   <p style="padding:0 4px;">Please find attached your bespoke interior design proposal. This document outlines the full design vision, room-by-room direction, investment breakdown, and project timeline.</p>
   <p style="color:#555;font-size:13px;padding:0 4px;">If you have any questions, simply reply to this email.</p>
   <hr style="border:none;border-top:1px solid #C4A97D;margin:24px 0;"/>
-  <p style="font-style:italic;color:#999;font-size:12px;padding:0 4px;">{designer} Studio · Powered by Vansh Craft</p>
+  <p style="font-style:italic;color:#999;font-size:12px;padding:0 4px;">{designer_studio} · Powered by Vansh Craft</p>
 </div>""",
             "attachments": [{
                 "filename": filename,
