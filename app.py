@@ -203,7 +203,8 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
         rightMargin=MARGIN, leftMargin=MARGIN,
         topMargin=MARGIN, bottomMargin=0.85 * inch,
     )
-    doc._studio = f"{designer_name} Studio"
+    studio_suffix = "" if designer_name.lower().rstrip().endswith("studio") else " Studio"
+    doc._studio = f"{designer_name}{studio_suffix}"
     doc._client = client_name
 
     S = make_styles()
@@ -211,7 +212,7 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
 
     # Cover band content
     story.append(Spacer(1, 0.35 * inch))
-    story.append(Paragraph(designer_name.upper(), S['CoverStudio']))
+    story.append(Paragraph(doc._studio.upper(), S['CoverStudio']))
     story.append(Spacer(1, 6))
     story.append(Paragraph("Interior Design", S['CoverSubtitle']))
     story.append(Paragraph("Proposal", S['CoverTitle']))
@@ -223,7 +224,7 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
     story.append(Spacer(1, 1.6 * inch))
 
     story.append(Paragraph(
-        f"{designer_name} Studio &nbsp;·&nbsp; Private &amp; Confidential &nbsp;·&nbsp; "
+        f"{doc._studio} &nbsp;·&nbsp; Private &amp; Confidential &nbsp;·&nbsp; "
         f"Prepared for {client_name}", S['MetaLine']))
     story.append(thin_rule())
     story.append(Spacer(1, 16))
@@ -338,7 +339,7 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
     story.append(Spacer(1, 24))
     story.append(gold_rule())
     story.append(Paragraph(
-        f"{designer_name} Studio &nbsp;·&nbsp; {city}", S['FooterCity']))
+        f"{doc._studio} &nbsp;·&nbsp; {city}", S['FooterCity']))
     if designer_email:
         story.append(Paragraph(designer_email, S['FooterCity']))
 
