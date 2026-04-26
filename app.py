@@ -335,7 +335,7 @@ def generate():
         params = {
             "from": from_email,
             "to":   [recipient_email],
-            "subject": f"Your Interior Design Proposal — {client}, {city}",
+            "subject": f"Your Interior Design Proposal — {client}, {city}"| Designer: {designer_email}",
             "html": f"""
 <div style="font-family:Georgia,serif;max-width:600px;margin:0 auto;
             color:#1a1a1a;line-height:1.7;">
