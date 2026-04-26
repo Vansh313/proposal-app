@@ -162,6 +162,7 @@ def build_investment_table(rows):
     col_w = [W * 0.62, W * 0.38]
     t = Table(data, colWidths=col_w, repeatRows=1)
     t.setStyle(TableStyle([
+        # Header row — dark background, white text
         ('BACKGROUND',    (0, 0), (-1, 0), ALMOST_BLACK),
         ('TEXTCOLOR',     (0, 0), (-1, 0), WHITE),
         ('FONTNAME',      (0, 0), (-1, 0), 'Times-Bold'),
@@ -169,14 +170,18 @@ def build_investment_table(rows):
         ('ALIGN',         (1, 0), (1, 0),  'RIGHT'),
         ('TOPPADDING',    (0, 0), (-1, 0), 8),
         ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+        # Body rows — white/cream background, dark text
+        ('BACKGROUND',    (0, 1), (-1, -2), WHITE),
+        ('TEXTCOLOR',     (0, 1), (-1, -1), DARK),
         ('FONTNAME',      (0, 1), (-1, -1), 'Times-Roman'),
         ('FONTSIZE',      (0, 1), (-1, -1), 10),
-        ('TEXTCOLOR',     (0, 1), (-1, -1), DARK),
         ('ALIGN',         (1, 1), (1, -1),  'RIGHT'),
-        ('ROWBACKGROUNDS',(0, 1), (-1, -1), [WHITE, WARM_WHITE]),
+        # Total row — slightly warm background, bold
+        ('BACKGROUND',    (0, -1), (-1, -1), WARM_WHITE),
         ('FONTNAME',      (0, -1), (-1, -1), 'Times-Bold'),
         ('TEXTCOLOR',     (0, -1), (-1, -1), ALMOST_BLACK),
         ('LINEABOVE',     (0, -1), (-1, -1), 0.8, GOLD),
+        # Grid and padding
         ('GRID',          (0, 0), (-1, -1), 0.3, LIGHT_GREY),
         ('LINEBELOW',     (0, 0), (-1, 0),  1,   GOLD),
         ('TOPPADDING',    (0, 1), (-1, -1), 7),
@@ -312,8 +317,8 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
             if budget_row:
                 table_rows.append(budget_row)
                 continue
-            # If it's a short descriptor line after a budget line, skip it
-            if table_rows and len(table_rows) > 1 and '$' not in line and len(line) < 120:
+            # Skip descriptor lines that follow budget rows (no $ sign = description)
+            if table_rows and len(table_rows) > 1 and '$' not in line:
                 continue
 
         story.append(Paragraph(line, S['Body']))
