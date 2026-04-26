@@ -236,7 +236,8 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
         i += 1
 
         if not line:
-            if table_rows:
+            # Don't flush table on blank lines if we're in investment section
+            if table_rows and not in_investment_section:
                 t = build_investment_table(table_rows)
                 if t:
                     story.append(t)
