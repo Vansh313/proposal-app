@@ -21,6 +21,7 @@ SUBTLE       = colors.HexColor('#888888')
 LIGHT_GREY   = colors.HexColor('#E8E8E8')
 WARM_WHITE   = colors.HexColor('#F9F7F4')
 GOLD         = colors.HexColor('#C4A97D')
+GOLD_DARK    = colors.HexColor('#9A7D52')
 WHITE        = colors.white
 
 PAGE_W, PAGE_H = letter
@@ -161,34 +162,37 @@ def build_investment_table(rows):
             data.append(row[:2])
     col_w = [W * 0.62, W * 0.38]
     t = Table(data, colWidths=col_w, repeatRows=1)
-    t.setStyle(TableStyle([
-        # Header row — dark background, white text
-        ('BACKGROUND',    (0, 0), (-1, 0), ALMOST_BLACK),
-        ('TEXTCOLOR',     (0, 0), (-1, 0), WHITE),
-        ('FONTNAME',      (0, 0), (-1, 0), 'Times-Bold'),
-        ('FONTSIZE',      (0, 0), (-1, 0), 9),
-        ('ALIGN',         (1, 0), (1, 0),  'RIGHT'),
-        ('TOPPADDING',    (0, 0), (-1, 0), 8),
-        ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
-        # Body rows — white/cream background, dark text
-        ('BACKGROUND',    (0, 1), (-1, -2), WHITE),
-        ('TEXTCOLOR',     (0, 1), (-1, -1), DARK),
-        ('FONTNAME',      (0, 1), (-1, -1), 'Times-Roman'),
-        ('FONTSIZE',      (0, 1), (-1, -1), 10),
-        ('ALIGN',         (1, 1), (1, -1),  'RIGHT'),
-        # Total row — slightly warm background, bold
-        ('BACKGROUND',    (0, -1), (-1, -1), WARM_WHITE),
-        ('FONTNAME',      (0, -1), (-1, -1), 'Times-Bold'),
-        ('TEXTCOLOR',     (0, -1), (-1, -1), ALMOST_BLACK),
-        ('LINEABOVE',     (0, -1), (-1, -1), 0.8, GOLD),
-        # Grid and padding
-        ('GRID',          (0, 0), (-1, -1), 0.3, LIGHT_GREY),
-        ('LINEBELOW',     (0, 0), (-1, 0),  1,   GOLD),
-        ('TOPPADDING',    (0, 1), (-1, -1), 7),
-        ('BOTTOMPADDING', (0, 1), (-1, -1), 7),
+    # Apply styles row by row to avoid conflicts
+    nrows = len(data)
+    style_cmds = [
+        # All cells: dark text, Times-Roman, padding
+        ('TEXTCOLOR',     (0, 0), (-1, -1), DARK),
+        ('FONTNAME',      (0, 0), (-1, -1), 'Times-Roman'),
+        ('FONTSIZE',      (0, 0), (-1, -1), 10),
+        ('TOPPADDING',    (0, 0), (-1, -1), 7),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 7),
         ('LEFTPADDING',   (0, 0), (-1, -1), 10),
         ('RIGHTPADDING',  (0, 0), (-1, -1), 10),
-    ]))
+        # Grid
+        ('GRID',          (0, 0), (-1, -1), 0.3, LIGHT_GREY),
+        # Header row (row 0): gold background, dark bold text
+        ('BACKGROUND',    (0, 0), (-1, 0), GOLD),
+        ('TEXTCOLOR',     (0, 0), (-1, 0), DARK),
+        ('FONTNAME',      (0, 0), (-1, 0), 'Times-Bold'),
+        ('FONTSIZE',      (0, 0), (-1, 0), 9),
+        ('LINEBELOW',     (0, 0), (-1, 0), 1, GOLD_DARK),
+        ('ALIGN',         (1, 0), (1, 0),  'RIGHT'),
+        # Body rows: alternating white/warm_white
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [WHITE, WARM_WHITE]),
+        ('ALIGN',         (1, 1), (1, -1),  'RIGHT'),
+    ]
+    # Total row (last): bold, gold top line
+    if nrows > 2:
+        style_cmds += [
+            ('FONTNAME',  (0, -1), (-1, -1), 'Times-Bold'),
+            ('LINEABOVE', (0, -1), (-1, -1), 1.2, GOLD_DARK),
+        ]
+    t.setStyle(TableStyle(style_cmds))
     return t
 
 
@@ -306,20 +310,21 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
 
         # Auto-detect plain budget lines in investment section
         if in_investment_section:
-            # Skip the recommendation sentence
+            # Render recommendation sentence as body text before table builds
             if 'recommend positioning' in line.lower():
                 story.append(Paragraph(line, S['Body']))
                 continue
-            # Skip lines that look like table headers (Category / Estimated Range)
-            if re.match(r'^category\s+estimated', line.lower()):
+            # Skip header row Claude sometimes outputs as text
+            if re.match(r'^category[\s	]+estimated', line.lower()):
                 continue
-            # Skip pure description lines that follow a budget row (no $ sign, short)
+            # Try to parse as a budget line
             budget_row = try_parse_budget_line(line)
             if budget_row:
                 table_rows.append(budget_row)
                 continue
-            # Skip descriptor lines that follow budget rows (no $ sign = description)
-            if table_rows and len(table_rows) > 1 and '$' not in line:
+            # Skip ALL other lines in investment section (descriptions, notes, etc.)
+            # unless they look like important standalone text
+            if '$' not in line:
                 continue
 
         story.append(Paragraph(line, S['Body']))
