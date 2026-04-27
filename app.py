@@ -205,7 +205,8 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
         rightMargin=MARGIN, leftMargin=MARGIN,
         topMargin=MARGIN, bottomMargin=0.85 * inch,
     )
-    studio_suffix = "" if designer_name.lower().rstrip().endswith("studio") else " Studio"
+suffixes = ['studio', 'interiors', 'design', 'designs', 'creative', 'co', 'group']
+    studio_suffix = "" if any(designer_name.lower().rstrip().endswith(s) for s in suffixes) else " Studio"
     doc._studio = f"{designer_name}{studio_suffix}"
     doc._client = client_name
 
