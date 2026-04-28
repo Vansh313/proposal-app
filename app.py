@@ -312,12 +312,16 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
             timeline_rows.append([current_phase, '\n'.join(phase_activities)])
             current_phase = None
             phase_activities = []
-        if timeline_rows:
+        # Only render table if we have actual phase rows (more than just the header)
+        if len(timeline_rows) > 1:
             t = build_timeline_table(timeline_rows)
             if t:
                 story.append(t)
                 story.append(Spacer(1, 14))
-            timeline_rows.clear()
+        elif timeline_rows:
+            # Header only — timeline was body text, already rendered, just clear
+            pass
+        timeline_rows.clear()
 
     while i < len(lines):
         raw = lines[i]
@@ -404,21 +408,30 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
                 story.append(Paragraph('— &nbsp;' + content, S['BulletItem']))
             continue
 
-        # ── Phase headers in timeline (e.g. "Phase 1: Discovery") ──
+        # ── Phase headers in timeline (e.g. "Phase 1: Discovery" or "Phase One: Discovery (dates)") ──
         if in_timeline:
-            phase_m = re.match(r'^(Phase\s+\d+[:\.]?\s*.+)$', line, re.IGNORECASE)
+            phase_m = re.match(
+                r'^(Phase\s+(?:\d+|[A-Za-z]+)[:\.]?\s*.+?)(?:\s*[\(\[].*[\)\]])?$',
+                line, re.IGNORECASE)
             if phase_m:
                 if current_phase and phase_activities:
                     timeline_rows.append([current_phase, '\n'.join(phase_activities)])
-                current_phase = phase_m.group(1).strip()
+                # Include date range in phase label if present
+                current_phase = line.strip()
                 phase_activities = []
                 continue
-            # Date range lines become part of phase header
-            if re.search(r'\d{4}', line) and current_phase:
+            # Standalone date range lines (no phase keyword) — append to current phase label
+            if re.match(r'^[A-Z][a-z]+ \d+', line) and current_phase and not phase_activities:
                 current_phase = f"{current_phase}\n{line}"
                 continue
             if current_phase is not None:
-                phase_activities.append(f"— {line}")
+                # Body text lines become activities
+                content = re.sub(r'^[\-–—\•]\s*', '', line)
+                phase_activities.append(f"— {content}")
+                continue
+            else:
+                # No phase detected yet — render as body text
+                story.append(Paragraph(line, S['Body']))
                 continue
 
         # ── Investment section ──
@@ -426,7 +439,7 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
             if 'recommend positioning' in line.lower():
                 story.append(Paragraph(line, S['Body']))
                 continue
-            if re.match(r'^category[\s\t]+estimated', line.lower()):
+            if re.match(r'^(category|estimated)', line.lower()):
                 continue
             budget_row = try_parse_budget_line(line)
             if budget_row:
