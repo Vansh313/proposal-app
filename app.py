@@ -397,8 +397,8 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
                 story.append(Paragraph(line.title(), S['SubHead']))
             continue
 
-        # ── Separator lines and lone dashes ──
-        if re.match(r'^[-=]{1,3}$', line.strip()):
+        # ── Separator lines and lone dashes (any length) ──
+        if re.match(r'^[-=*_]{1,}$', line.strip()):
             continue
 
         # ── Pipe table rows ──
@@ -468,14 +468,24 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
                 continue
             if re.match(r'^(category|estimated)', line.lower()):
                 continue
-            # Try parse even if line starts with bullet/dash
+            # Try parse as budget line — but only if it's a TOP-LEVEL item
+            # Sub-items (indented with spaces or starting with — inside a category) 
+            # should be skipped to keep table clean
             budget_row = try_parse_budget_line(line)
             if budget_row:
-                table_rows.append(budget_row)
+                # Check if this looks like a sub-item (label is very short or 
+                # starts with common sub-item words)
+                label = budget_row[0].lower()
+                sub_keywords = ['bathroom fixture', 'kitchen cabinet', 'flooring',
+                                'wall treatment', 'textile', 'pendant', 'dining table',
+                                'office desk', 'wall sconce', 'statement']
+                is_subitem = any(k in label for k in sub_keywords) and len(label) < 50
+                if not is_subitem:
+                    table_rows.append(budget_row)
                 continue
-            # Skip non-$ lines (descriptions, notes) but render closing sentences
+            # Skip non-$ lines (descriptions, notes) but render long closing sentences
             if '$' not in line:
-                if len(line) > 60:  # Long sentences = render as body
+                if len(line) > 60:
                     story.append(Paragraph(line, S['Body']))
                 continue
 
