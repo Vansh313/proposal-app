@@ -351,6 +351,7 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
     section_counter = 0
     in_investment = False
     in_timeline = False
+    in_next_steps = False
     current_phase = None
     phase_activities = []
 
@@ -394,10 +395,12 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
             flush_timeline()
             in_investment = False
             in_timeline = False
+            in_next_steps = False
             section_counter += 1
             num_str = f"0 {section_counter}" if section_counter < 10 else str(section_counter)
-            in_investment = ('investment' in title.lower() or 'budget' in title.lower())
-            in_timeline   = ('timeline' in title.lower() or 'schedule' in title.lower())
+            in_investment  = ('investment' in title.lower() or 'budget' in title.lower())
+            in_timeline    = ('timeline' in title.lower() or 'schedule' in title.lower())
+            in_next_steps  = ('next steps' in title.lower() or 'next step' in title.lower())
 
             story.append(Spacer(1, 4))
             story.append(thin_rule())
@@ -428,11 +431,13 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
                 story.append(Paragraph(line.title(), S['SubHead']))
             continue
 
-        # Separator lines
+        # Separator lines — including lone single dash/star
         stripped = line.strip()
-        if stripped and len(stripped) >= 1:
+        if stripped in ('-', '–', '—', '*', '**'):
+            continue
+        if stripped and len(stripped) >= 2:
             dash_ratio = sum(1 for c in stripped if c in '-=_*') / len(stripped)
-            if dash_ratio >= 0.5 and len(stripped) >= 3:
+            if dash_ratio >= 0.5:
                 continue
 
         # Pipe table rows
@@ -516,7 +521,11 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
 
         # Default: body text
         flush_table()
-        story.append(Paragraph(line, S['Body']))
+        # In Next Steps, render plain paragraphs as bullet items
+        if in_next_steps and len(line) > 20:
+            story.append(Paragraph('— &nbsp;' + line, S['BulletItem']))
+        else:
+            story.append(Paragraph(line, S['Body']))
 
     flush_table()
     flush_timeline()
