@@ -30,7 +30,6 @@ W = PAGE_W - 2 * MARGIN
 
 
 def spaced_caps(text):
-    """Convert 'Studio Nova' to 'S T U D I O  N O V A'"""
     return '  '.join(' '.join(list(word)) for word in text.upper().split())
 
 
@@ -44,7 +43,6 @@ def cover_page_canvas(canvas, doc):
         canvas.setLineWidth(0.6)
         canvas.line(MARGIN, PAGE_H - band_h + 0.01*inch,
                     PAGE_W - MARGIN, PAGE_H - band_h + 0.01*inch)
-    # Footer
     canvas.setFont('Times-Roman', 8)
     canvas.setFillColor(SUBTLE)
     footer_y = 0.42 * inch
@@ -61,7 +59,6 @@ def make_styles():
     def add(name, **kw):
         s.add(ParagraphStyle(name=name, **kw))
 
-    # Cover
     add('CoverStudio',
         fontName='Times-Roman', fontSize=8,
         textColor=GOLD, alignment=TA_CENTER, spaceAfter=10, leading=12,
@@ -76,8 +73,6 @@ def make_styles():
     add('CoverYear',
         fontName='Times-Roman', fontSize=9,
         textColor=GOLD, alignment=TA_CENTER, spaceAfter=0, leading=12)
-
-    # Section numbers — large, light grey, left aligned
     add('SectionNum',
         fontName='Times-Roman', fontSize=36,
         textColor=LIGHT_GREY, alignment=TA_LEFT,
@@ -87,14 +82,10 @@ def make_styles():
         textColor=DARK, alignment=TA_LEFT,
         spaceBefore=0, spaceAfter=12, leading=16,
         tracking=1)
-
-    # Sub-headings (room names etc.)
     add('SubHead',
         fontName='Times-Bold', fontSize=10.5,
         textColor=MID, alignment=TA_LEFT,
         spaceBefore=14, spaceAfter=4, leading=14)
-
-    # Body
     add('Body',
         fontName='Times-Roman', fontSize=10.5,
         textColor=DARK, alignment=TA_JUSTIFY,
@@ -103,8 +94,6 @@ def make_styles():
         fontName='Times-Roman', fontSize=10.5,
         textColor=DARK, alignment=TA_LEFT,
         leading=16, spaceAfter=5, leftIndent=18, firstLineIndent=-14)
-
-    # Signature block
     add('SignatureText',
         fontName='Times-Italic', fontSize=12.5,
         textColor=MID, alignment=TA_CENTER,
@@ -112,14 +101,15 @@ def make_styles():
     add('SignatureAttr',
         fontName='Times-Roman', fontSize=9,
         textColor=SUBTLE, alignment=TA_CENTER, spaceAfter=4, leading=13)
-
-    # Meta / footer
     add('MetaLine',
         fontName='Times-Roman', fontSize=8.5,
         textColor=SUBTLE, alignment=TA_LEFT, spaceAfter=2, leading=12)
     add('FooterCity',
         fontName='Times-Roman', fontSize=9,
         textColor=SUBTLE, alignment=TA_CENTER, spaceAfter=0)
+    add('InvHeading',
+        fontName='Times-Bold', fontSize=10.5,
+        textColor=MID, spaceBefore=10, spaceAfter=4, leading=14)
 
     return s
 
@@ -152,19 +142,16 @@ def is_table_separator(line):
 
 def try_parse_budget_line(line):
     line = re.sub(r'^[\-–—\•]\s+', '', line.strip())
-    # Format 1: "Label: $X–$Y"
     m = re.match(
         r'^(.{3,80}):\s+(\$[\d,]+\s*[\u2013\u2014-]+\s*\$[\d,]+.*?)(?:\s*\(.*\))?$',
         line)
     if m:
         return [m.group(1).strip(), m.group(2).strip()]
-    # Format 2: "Label $X — $Y"
     m2 = re.match(
         r'^((?:[A-Za-z&,/()\s]+))\s+(\$[\d,]+\s*[\u2013\u2014-]+\s*\$[\d,]+)',
         line)
     if m2 and len(m2.group(1).strip()) > 3:
         return [m2.group(1).strip(), m2.group(2).strip()]
-    # Format 3: "Label: $XX,XXX" (total)
     m3 = re.match(r'^(.{3,80}):\s+(\$[\d,\s]+?)(?:\s*\(.*\))?$', line)
     if m3 and '$' in m3.group(2):
         return [m3.group(1).strip(), m3.group(2).strip()]
@@ -176,56 +163,105 @@ def parse_table_row(line):
     return [p for p in parts if p]
 
 
-def build_investment_table(rows):
+def build_investment_flowables(rows, S):
+    """
+    Returns a list of KeepTogether flowables — one per sub-section —
+    so category headings never split from their rows across pages.
+    """
     if not rows:
-        return None
-    data = []
-    for row in rows:
-        if len(row) == 1:
-            data.append([row[0], ''])
-        else:
-            data.append(row[:2])
+        return []
 
     col_w = [W * 0.62, W * 0.38]
-    t = Table(data, colWidths=col_w, repeatRows=1)
-    nrows = len(data)
-    cmds = [
-        ('TEXTCOLOR',      (0, 0), (-1, -1), DARK),
-        ('FONTNAME',       (0, 0), (-1, -1), 'Times-Roman'),
-        ('FONTSIZE',       (0, 0), (-1, -1), 10),
-        ('TOPPADDING',     (0, 0), (-1, -1), 8),
-        ('BOTTOMPADDING',  (0, 0), (-1, -1), 8),
-        ('LEFTPADDING',    (0, 0), (-1, -1), 10),
-        ('RIGHTPADDING',   (0, 0), (-1, -1), 10),
-        ('GRID',           (0, 0), (-1, -1), 0.3, LIGHT_GREY),
-        # Header: dark background, gold text — Studio Nova style
-        ('BACKGROUND',     (0, 0), (-1, 0), ALMOST_BLACK),
-        ('TEXTCOLOR',      (0, 0), (-1, 0), GOLD),
-        ('FONTNAME',       (0, 0), (-1, 0), 'Times-Roman'),
-        ('FONTSIZE',       (0, 0), (-1, 0), 8),
-        ('ALIGN',          (1, 0), (1, 0),  'RIGHT'),
-        ('LINEBELOW',      (0, 0), (-1, 0), 0.8, GOLD),
-        # Body rows alternating
-        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [WHITE, WARM_WHITE]),
-        ('ALIGN',          (1, 1), (1, -1), 'RIGHT'),
-    ]
-    # Total row: bold with gold rule above
-    if nrows > 2:
-        cmds += [
-            ('FONTNAME',  (0, -1), (-1, -1), 'Times-Bold'),
-            ('LINEABOVE', (0, -1), (-1, -1), 1.0, GOLD_DARK),
-            ('BACKGROUND',(0, -1), (-1, -1), WARM_WHITE),
+
+    def make_mini_table(data_rows, include_header):
+        table_data = []
+        if include_header:
+            table_data.append(['CATEGORY', 'ESTIMATED RANGE'])
+        for row in data_rows:
+            if len(row) == 1:
+                table_data.append([row[0], ''])
+            else:
+                table_data.append(row[:2])
+
+        if not table_data:
+            return None
+
+        t = Table(table_data, colWidths=col_w)
+        offset = 1 if include_header else 0
+        cmds = [
+            ('TEXTCOLOR',      (0, 0), (-1, -1), DARK),
+            ('FONTNAME',       (0, 0), (-1, -1), 'Times-Roman'),
+            ('FONTSIZE',       (0, 0), (-1, -1), 10),
+            ('TOPPADDING',     (0, 0), (-1, -1), 8),
+            ('BOTTOMPADDING',  (0, 0), (-1, -1), 8),
+            ('LEFTPADDING',    (0, 0), (-1, -1), 10),
+            ('RIGHTPADDING',   (0, 0), (-1, -1), 10),
+            ('GRID',           (0, 0), (-1, -1), 0.3, LIGHT_GREY),
+            ('ROWBACKGROUNDS', (0, offset), (-1, -1), [WHITE, WARM_WHITE]),
+            ('ALIGN',          (1, 0), (1, -1), 'RIGHT'),
         ]
-    t.setStyle(TableStyle(cmds))
-    return t
+        if include_header:
+            cmds += [
+                ('BACKGROUND',  (0, 0), (-1, 0), ALMOST_BLACK),
+                ('TEXTCOLOR',   (0, 0), (-1, 0), GOLD),
+                ('FONTNAME',    (0, 0), (-1, 0), 'Times-Roman'),
+                ('FONTSIZE',    (0, 0), (-1, 0), 8),
+                ('LINEBELOW',   (0, 0), (-1, 0), 0.8, GOLD),
+            ]
+        # Bold last row if it looks like a total (has a price)
+        last = len(table_data) - 1
+        if last >= offset and table_data[last][1]:
+            cmds += [
+                ('FONTNAME',  (0, last), (-1, last), 'Times-Bold'),
+                ('LINEABOVE', (0, last), (-1, last), 1.0, GOLD_DARK),
+            ]
+        t.setStyle(TableStyle(cmds))
+        return t
+
+    # Skip the CATEGORY/ESTIMATED RANGE header row — we re-add it ourselves
+    data_rows = rows[1:] if rows and rows[0] == ['CATEGORY', 'ESTIMATED RANGE'] else rows
+
+    # Split into sub-sections: a row with no price starts a new block
+    blocks = []
+    current_heading = None
+    current_rows = []
+
+    for row in data_rows:
+        no_price = len(row) == 1 or (len(row) >= 2 and not row[1].strip())
+        is_heading = no_price and '$' not in row[0]
+        if is_heading:
+            if current_heading is not None or current_rows:
+                blocks.append((current_heading, current_rows))
+            current_heading = row[0]
+            current_rows = []
+        else:
+            current_rows.append(row)
+
+    if current_heading is not None or current_rows:
+        blocks.append((current_heading, current_rows))
+
+    flowables = []
+    first = True
+    for heading, brows in blocks:
+        group = []
+        if heading:
+            group.append(Paragraph(heading, S['InvHeading']))
+        if brows:
+            mini = make_mini_table(brows, include_header=first)
+            if mini:
+                group.append(mini)
+                first = False
+        if group:
+            flowables.append(KeepTogether(group))
+            flowables.append(Spacer(1, 6))
+
+    return flowables
 
 
 def build_timeline_table(rows):
-    """Build a two-column timeline table: PHASE | KEY ACTIVITIES"""
     if not rows:
         return None
 
-    S = make_styles()
     phase_style = ParagraphStyle('TLPhase', fontName='Times-Roman',
                                   fontSize=9.5, textColor=DARK, leading=14,
                                   spaceAfter=0)
@@ -233,14 +269,12 @@ def build_timeline_table(rows):
                                      fontSize=9.5, textColor=MID, leading=14,
                                      spaceAfter=0)
 
-    # Convert string cells to Paragraphs so text wraps properly
     wrapped = []
     for i, row in enumerate(rows):
         if i == 0:
-            # Header row — plain strings
             wrapped.append(row)
         else:
-            phase_text = row[0] if len(row) > 0 else ''
+            phase_text    = row[0] if len(row) > 0 else ''
             activity_text = row[1] if len(row) > 1 else ''
             wrapped.append([
                 Paragraph(phase_text.replace('\n', '<br/>'), phase_style),
@@ -259,7 +293,6 @@ def build_timeline_table(rows):
         ('LEFTPADDING',   (0, 0), (-1, -1), 10),
         ('RIGHTPADDING',  (0, 0), (-1, -1), 10),
         ('GRID',          (0, 0), (-1, -1), 0.3, LIGHT_GREY),
-        # Header
         ('BACKGROUND',    (0, 0), (-1, 0), ALMOST_BLACK),
         ('TEXTCOLOR',     (0, 0), (-1, 0), GOLD),
         ('FONTNAME',      (0, 0), (-1, 0), 'Times-Roman'),
@@ -288,9 +321,8 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
     S = make_styles()
     story = []
 
-    # ── COVER BAND ──────────────────────────────────────────────────────────
+    # ── COVER ───────────────────────────────────────────────────────────────
     story.append(Spacer(1, 0.3 * inch))
-    # Spaced caps studio name
     story.append(Paragraph(spaced_caps(doc._studio), S['CoverStudio']))
     story.append(Spacer(1, 4))
     story.append(Paragraph("Interior Design", S['CoverSubtitle']))
@@ -302,7 +334,6 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
     story.append(Paragraph("2026", S['CoverYear']))
     story.append(Spacer(1, 1.55 * inch))
 
-    # Post-cover meta line
     story.append(Paragraph(
         f"{doc._studio} &nbsp;·&nbsp; Private &amp; Confidential &nbsp;·&nbsp; "
         f"Prepared for {client_name}", S['MetaLine']))
@@ -310,7 +341,6 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
     story.append(Spacer(1, 14))
 
     # ── BODY PARSING ────────────────────────────────────────────────────────
-    # Pre-clean: remove dash separator lines from the entire proposal text
     proposal_text = re.sub(r'\n[ \t]*[-]{4,}[ \t]*\n', '\n', proposal_text)
     proposal_text = re.sub(r'\n[ \t]*[=]{4,}[ \t]*\n', '\n', proposal_text)
 
@@ -327,10 +357,11 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
     def flush_table():
         nonlocal table_rows
         if table_rows:
-            t = build_investment_table(table_rows)
-            if t:
-                story.append(t)
-                story.append(Spacer(1, 14))
+            flowables = build_investment_flowables(table_rows, S)
+            for f in flowables:
+                story.append(f)
+            if flowables:
+                story.append(Spacer(1, 8))
             table_rows = []
 
     def flush_timeline():
@@ -339,15 +370,11 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
             timeline_rows.append([current_phase, '\n'.join(phase_activities)])
             current_phase = None
             phase_activities = []
-        # Only render table if we have actual phase rows (more than just the header)
         if len(timeline_rows) > 1:
             t = build_timeline_table(timeline_rows)
             if t:
                 story.append(t)
                 story.append(Spacer(1, 14))
-        elif timeline_rows:
-            # Header only — timeline was body text, already rendered, just clear
-            pass
         timeline_rows.clear()
 
     while i < len(lines):
@@ -360,7 +387,7 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
                 flush_table()
             continue
 
-        # ── Section header ──
+        # Section header
         num, title = parse_section_header(line)
         if num:
             flush_table()
@@ -383,13 +410,13 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
                 timeline_rows = [['PHASE', 'KEY ACTIVITIES']]
             continue
 
-        # ── Bold subheader ──
+        # Bold subheader
         if line.startswith('**') and line.endswith('**'):
             flush_table()
             story.append(Paragraph(line.strip('*').strip().title(), S['SubHead']))
             continue
 
-        # ── ALL CAPS subheader (room names) ──
+        # ALL CAPS subheader
         if line.isupper() and 2 < len(line) < 60 and '|' not in line:
             flush_table()
             if in_timeline:
@@ -401,14 +428,14 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
                 story.append(Paragraph(line.title(), S['SubHead']))
             continue
 
-        # ── Separator lines — any line that's 50%+ dashes, equals, or underscores ──
+        # Separator lines
         stripped = line.strip()
         if stripped and len(stripped) >= 1:
             dash_ratio = sum(1 for c in stripped if c in '-=_*') / len(stripped)
             if dash_ratio >= 0.5 and len(stripped) >= 3:
                 continue
 
-        # ── Pipe table rows ──
+        # Pipe table rows
         if '|' in line:
             if not is_table_separator(line):
                 row = parse_table_row(line)
@@ -416,7 +443,7 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
                     table_rows.append(row)
             continue
 
-        # ── Italic signature ──
+        # Italic signature
         if line.startswith('*') and line.endswith('*') and not line.startswith('**'):
             flush_table()
             flush_timeline()
@@ -428,7 +455,7 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
             story.append(gold_rule(width='50%'))
             continue
 
-        # ── Bullet items ──
+        # Bullet items
         if line.startswith(('- ', '• ', '* ', '— ')):
             flush_table()
             content = re.sub(r'^[\-–—\•\*]\s+', '', line)
@@ -438,8 +465,7 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
                 story.append(Paragraph('— &nbsp;' + content, S['BulletItem']))
             continue
 
-        # ── Phase headers in timeline ──
-        # Catches: "Phase One: ...", "**Phase One: ...**", "Phase 1: ..."
+        # Timeline phase headers
         if in_timeline:
             clean_line = line.strip('*').strip()
             phase_m = re.match(
@@ -451,14 +477,12 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
                 current_phase = clean_line.strip()
                 phase_activities = []
                 continue
-            # Standalone date range lines — append to current phase label
             if re.match(r'^[A-Z][a-z]+ \d+', clean_line) and current_phase and not phase_activities:
                 current_phase = f"{current_phase}\n{clean_line}"
                 continue
             if current_phase is not None:
                 content = re.sub(r'^[\-–—\•]\s*', '', clean_line)
                 if content:
-                    # Long lines are paragraph descriptions, short ones are bullet points
                     if len(content) > 80:
                         phase_activities.append(content)
                     else:
@@ -468,20 +492,15 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
                 story.append(Paragraph(clean_line, S['Body']))
                 continue
 
-        # ── Investment section ──
+        # Investment section
         if in_investment:
             if 'recommend positioning' in line.lower():
                 story.append(Paragraph(line, S['Body']))
                 continue
             if re.match(r'^(category|estimated)', line.lower()):
                 continue
-            # Try parse as budget line — but only if it's a TOP-LEVEL item
-            # Sub-items (indented with spaces or starting with — inside a category) 
-            # should be skipped to keep table clean
             budget_row = try_parse_budget_line(line)
             if budget_row:
-                # Check if this looks like a sub-item (label is very short or 
-                # starts with common sub-item words)
                 label = budget_row[0].lower()
                 sub_keywords = ['bathroom fixture', 'kitchen cabinet', 'flooring',
                                 'wall treatment', 'textile', 'pendant', 'dining table',
@@ -490,13 +509,12 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
                 if not is_subitem:
                     table_rows.append(budget_row)
                 continue
-            # Skip non-$ lines (descriptions, notes) but render long closing sentences
             if '$' not in line:
                 if len(line) > 60:
                     story.append(Paragraph(line, S['Body']))
                 continue
 
-        # ── Default: body text ──
+        # Default: body text
         flush_table()
         story.append(Paragraph(line, S['Body']))
 
