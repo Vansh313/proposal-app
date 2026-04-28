@@ -224,15 +224,38 @@ def build_timeline_table(rows):
     """Build a two-column timeline table: PHASE | KEY ACTIVITIES"""
     if not rows:
         return None
-    col_w = [W * 0.32, W * 0.68]
-    t = Table(rows, colWidths=col_w)
+
+    S = make_styles()
+    phase_style = ParagraphStyle('TLPhase', fontName='Times-Roman',
+                                  fontSize=9.5, textColor=DARK, leading=14,
+                                  spaceAfter=0)
+    activity_style = ParagraphStyle('TLActivity', fontName='Times-Roman',
+                                     fontSize=9.5, textColor=MID, leading=14,
+                                     spaceAfter=0)
+
+    # Convert string cells to Paragraphs so text wraps properly
+    wrapped = []
+    for i, row in enumerate(rows):
+        if i == 0:
+            # Header row — plain strings
+            wrapped.append(row)
+        else:
+            phase_text = row[0] if len(row) > 0 else ''
+            activity_text = row[1] if len(row) > 1 else ''
+            wrapped.append([
+                Paragraph(phase_text.replace('\n', '<br/>'), phase_style),
+                Paragraph(activity_text.replace('\n', '<br/>'), activity_style),
+            ])
+
+    col_w = [W * 0.35, W * 0.65]
+    t = Table(wrapped, colWidths=col_w)
     cmds = [
         ('TEXTCOLOR',     (0, 0), (-1, -1), DARK),
         ('FONTNAME',      (0, 0), (-1, -1), 'Times-Roman'),
-        ('FONTSIZE',      (0, 0), (-1, -1), 10),
+        ('FONTSIZE',      (0, 0), (-1, -1), 9.5),
         ('VALIGN',        (0, 0), (-1, -1), 'TOP'),
-        ('TOPPADDING',    (0, 0), (-1, -1), 8),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+        ('TOPPADDING',    (0, 0), (-1, -1), 9),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 9),
         ('LEFTPADDING',   (0, 0), (-1, -1), 10),
         ('RIGHTPADDING',  (0, 0), (-1, -1), 10),
         ('GRID',          (0, 0), (-1, -1), 0.3, LIGHT_GREY),
@@ -428,7 +451,11 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
             if current_phase is not None:
                 content = re.sub(r'^[\-–—\•]\s*', '', clean_line)
                 if content:
-                    phase_activities.append(f"— {content}")
+                    # Long lines are paragraph descriptions, short ones are bullet points
+                    if len(content) > 80:
+                        phase_activities.append(content)
+                    else:
+                        phase_activities.append(f"— {content}")
                 continue
             else:
                 story.append(Paragraph(clean_line, S['Body']))
