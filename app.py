@@ -374,8 +374,8 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
                 story.append(Paragraph(line.title(), S['SubHead']))
             continue
 
-        # ── Separator lines ──
-        if re.match(r'^[-=]{3,}$', line):
+        # ── Separator lines and lone dashes ──
+        if re.match(r'^[-=]{1,3}$', line.strip()):
             continue
 
         # ── Pipe table rows ──
@@ -408,30 +408,30 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
                 story.append(Paragraph('— &nbsp;' + content, S['BulletItem']))
             continue
 
-        # ── Phase headers in timeline (e.g. "Phase 1: Discovery" or "Phase One: Discovery (dates)") ──
+        # ── Phase headers in timeline ──
+        # Catches: "Phase One: ...", "**Phase One: ...**", "Phase 1: ..."
         if in_timeline:
+            clean_line = line.strip('*').strip()
             phase_m = re.match(
                 r'^(Phase\s+(?:\d+|[A-Za-z]+)[:\.]?\s*.+?)(?:\s*[\(\[].*[\)\]])?$',
-                line, re.IGNORECASE)
+                clean_line, re.IGNORECASE)
             if phase_m:
                 if current_phase and phase_activities:
                     timeline_rows.append([current_phase, '\n'.join(phase_activities)])
-                # Include date range in phase label if present
-                current_phase = line.strip()
+                current_phase = clean_line.strip()
                 phase_activities = []
                 continue
-            # Standalone date range lines (no phase keyword) — append to current phase label
-            if re.match(r'^[A-Z][a-z]+ \d+', line) and current_phase and not phase_activities:
-                current_phase = f"{current_phase}\n{line}"
+            # Standalone date range lines — append to current phase label
+            if re.match(r'^[A-Z][a-z]+ \d+', clean_line) and current_phase and not phase_activities:
+                current_phase = f"{current_phase}\n{clean_line}"
                 continue
             if current_phase is not None:
-                # Body text lines become activities
-                content = re.sub(r'^[\-–—\•]\s*', '', line)
-                phase_activities.append(f"— {content}")
+                content = re.sub(r'^[\-–—\•]\s*', '', clean_line)
+                if content:
+                    phase_activities.append(f"— {content}")
                 continue
             else:
-                # No phase detected yet — render as body text
-                story.append(Paragraph(line, S['Body']))
+                story.append(Paragraph(clean_line, S['Body']))
                 continue
 
         # ── Investment section ──
@@ -441,11 +441,15 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
                 continue
             if re.match(r'^(category|estimated)', line.lower()):
                 continue
+            # Try parse even if line starts with bullet/dash
             budget_row = try_parse_budget_line(line)
             if budget_row:
                 table_rows.append(budget_row)
                 continue
+            # Skip non-$ lines (descriptions, notes) but render closing sentences
             if '$' not in line:
+                if len(line) > 60:  # Long sentences = render as body
+                    story.append(Paragraph(line, S['Body']))
                 continue
 
         # ── Default: body text ──
