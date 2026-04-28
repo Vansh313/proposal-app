@@ -310,6 +310,10 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
     story.append(Spacer(1, 14))
 
     # ── BODY PARSING ────────────────────────────────────────────────────────
+    # Pre-clean: remove dash separator lines from the entire proposal text
+    proposal_text = re.sub(r'\n[ \t]*[-]{4,}[ \t]*\n', '\n', proposal_text)
+    proposal_text = re.sub(r'\n[ \t]*[=]{4,}[ \t]*\n', '\n', proposal_text)
+
     lines = proposal_text.splitlines()
     i = 0
     table_rows = []
@@ -397,9 +401,12 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
                 story.append(Paragraph(line.title(), S['SubHead']))
             continue
 
-        # ── Separator lines and lone dashes (any length) ──
-        if re.match(r'^[-=*_]{1,}$', line.strip()):
-            continue
+        # ── Separator lines — any line that's 50%+ dashes, equals, or underscores ──
+        stripped = line.strip()
+        if stripped and len(stripped) >= 1:
+            dash_ratio = sum(1 for c in stripped if c in '-=_*') / len(stripped)
+            if dash_ratio >= 0.5 and len(stripped) >= 3:
+                continue
 
         # ── Pipe table rows ──
         if '|' in line:
