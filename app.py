@@ -30,7 +30,9 @@ W = PAGE_W - 2 * MARGIN
 
 
 def spaced_caps(text):
-    return '  '.join(' '.join(list(word)) for word in text.upper().split())
+    """Convert 'Design By Paula Studio' -> 'D E S I G N  B Y  P A U L A  S T U D I O'"""
+    words = text.upper().split()
+    return '  '.join(' '.join(list(word)) for word in words)
 
 
 def cover_page_canvas(canvas, doc):
@@ -413,13 +415,13 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
                 timeline_rows = [['PHASE', 'KEY ACTIVITIES']]
             continue
 
-        # Bold subheader
+        # Bold subheader **text**
         if line.startswith('**') and line.endswith('**'):
             flush_table()
             story.append(Paragraph(line.strip('*').strip().title(), S['SubHead']))
             continue
 
-        # ALL CAPS subheader
+        # ALL CAPS subheader (e.g. LIVING ROOM)
         if line.isupper() and 2 < len(line) < 60 and '|' not in line:
             flush_table()
             if in_timeline:
@@ -429,6 +431,21 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
                 phase_activities = []
             else:
                 story.append(Paragraph(line.title(), S['SubHead']))
+            continue
+
+        # Title Case room name — catches "Bathroom", "Living Room" etc. when Claude ignores ALL CAPS
+        KNOWN_ROOMS = {
+            'bathroom', 'kitchen', 'living room', 'master bedroom', 'bedroom',
+            'dining', 'dining room', 'office', 'balcony', 'kids room',
+            'guest room', 'hallway', 'entryway', 'studio', 'lounge',
+            'powder room', 'laundry', 'garage', 'terrace', 'garden'
+        }
+        if (not in_investment and not in_timeline
+                and 2 < len(line) < 50 and '|' not in line and '$' not in line
+                and not line.startswith(('-', '—', '*'))
+                and line.lower() in KNOWN_ROOMS):
+            flush_table()
+            story.append(Paragraph(line.title(), S['SubHead']))
             continue
 
         # Separator lines — including lone single dash/star
@@ -445,7 +462,18 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
             if not is_table_separator(line):
                 row = parse_table_row(line)
                 if row:
-                    table_rows.append(row)
+                    # Skip duplicate header rows (Claude sometimes re-outputs headers)
+                    row_lower = [c.lower().strip() for c in row]
+                    is_dup_header = (
+                        row_lower in [['category', 'estimated range'], ['phase', 'date range'],
+                                      ['phase', 'key activities'], ['category', 'estimated range'],
+                                      ['phase', 'dates'], ['phase', 'activities']]
+                        or (len(row) == 2 and row_lower[0] in ('category', 'phase')
+                            and row_lower[1] in ('estimated range', 'date range', 'key activities',
+                                                  'dates', 'activities', 'range'))
+                    )
+                    if not is_dup_header:
+                        table_rows.append(row)
             continue
 
         # Italic signature
