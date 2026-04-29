@@ -40,6 +40,31 @@ def spaced_caps(text):
     return ' &nbsp;&nbsp; '.join(spaced_words)
 
 
+def draw_spaced_caps(canvas, text, x, y, font='Times-Roman', size=7.5, color=None, letter_spacing=4, word_spacing=14):
+    """Draw text with manual letter and word spacing directly on canvas."""
+    if color:
+        canvas.setFillColor(color)
+    canvas.setFont(font, size)
+    words = text.upper().split()
+    # Measure total width first for centering
+    total_width = 0
+    for wi, word in enumerate(words):
+        for li, letter in enumerate(word):
+            total_width += canvas.stringWidth(letter, font, size)
+            if li < len(word) - 1:
+                total_width += letter_spacing
+        if wi < len(words) - 1:
+            total_width += word_spacing
+    # Draw centered
+    cx = x - total_width / 2
+    for wi, word in enumerate(words):
+        for li, letter in enumerate(word):
+            canvas.drawString(cx, y, letter)
+            cx += canvas.stringWidth(letter, font, size) + letter_spacing
+        if wi < len(words) - 1:
+            cx += word_spacing - letter_spacing  # extra gap between words
+
+
 def cover_page_canvas(canvas, doc):
     canvas.saveState()
     if doc.page == 1:
@@ -50,6 +75,12 @@ def cover_page_canvas(canvas, doc):
         canvas.setLineWidth(0.6)
         canvas.line(MARGIN, PAGE_H - band_h + 0.01*inch,
                     PAGE_W - MARGIN, PAGE_H - band_h + 0.01*inch)
+        # Draw spaced studio name directly on canvas
+        draw_spaced_caps(canvas, doc._studio,
+                         x=PAGE_W / 2,
+                         y=PAGE_H - 0.72 * inch,
+                         size=7.5, color=GOLD,
+                         letter_spacing=3.5, word_spacing=13)
     canvas.setFont('Times-Roman', 8)
     canvas.setFillColor(SUBTLE)
     footer_y = 0.42 * inch
@@ -353,9 +384,8 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
     story = []
 
     # ── COVER ───────────────────────────────────────────────────────────────
-    story.append(Spacer(1, 0.3 * inch))
-    story.append(Paragraph(spaced_caps(doc._studio), S['CoverStudio']))
-    story.append(Spacer(1, 4))
+    # Studio name is drawn directly on canvas with precise letter spacing
+    story.append(Spacer(1, 0.42 * inch))
     story.append(Paragraph("Interior Design", S['CoverSubtitle']))
     story.append(Paragraph("Proposal", S['CoverTitle']))
     story.append(Spacer(1, 2))
