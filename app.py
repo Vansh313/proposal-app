@@ -32,12 +32,12 @@ W = PAGE_W - 2 * MARGIN
 def spaced_caps(text):
     """
     Convert studio name to spaced caps for cover.
+    Uses &nbsp; so ReportLab doesn't collapse spaces.
     'Design By Paula Studio' -> 'D E S I G N   B Y   P A U L A   S T U D I O'
-    Each letter spaced, words separated by wider gap.
     """
     words = text.upper().split()
-    spaced_words = [' '.join(list(word)) for word in words]
-    return '   '.join(spaced_words)
+    spaced_words = [' &nbsp;'.join(list(word)) for word in words]
+    return ' &nbsp;&nbsp; '.join(spaced_words)
 
 
 def cover_page_canvas(canvas, doc):
