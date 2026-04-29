@@ -30,9 +30,14 @@ W = PAGE_W - 2 * MARGIN
 
 
 def spaced_caps(text):
-    """Convert 'Design By Paula Studio' -> 'D E S I G N  B Y  P A U L A  S T U D I O'"""
+    """
+    Convert studio name to spaced caps for cover.
+    'Design By Paula Studio' -> 'D E S I G N   B Y   P A U L A   S T U D I O'
+    Each letter spaced, words separated by wider gap.
+    """
     words = text.upper().split()
-    return '  '.join(' '.join(list(word)) for word in words)
+    spaced_words = [' '.join(list(word)) for word in words]
+    return '   '.join(spaced_words)
 
 
 def cover_page_canvas(canvas, doc):
@@ -62,9 +67,9 @@ def make_styles():
         s.add(ParagraphStyle(name=name, **kw))
 
     add('CoverStudio',
-        fontName='Times-Roman', fontSize=8,
+        fontName='Times-Roman', fontSize=7.5,
         textColor=GOLD, alignment=TA_CENTER, spaceAfter=10, leading=12,
-        tracking=4)
+        wordWrap='CJK')
     add('CoverTitle',
         fontName='Times-Bold', fontSize=30,
         textColor=WHITE, alignment=TA_CENTER, spaceAfter=6, leading=36)
@@ -165,11 +170,30 @@ def parse_table_row(line):
     return [p for p in parts if p]
 
 
+def is_duplicate_header(row):
+    """Check if a table row is a duplicate header like Category/Estimated Range."""
+    if not row:
+        return False
+    row_lower = [c.lower().strip() for c in row]
+    header_combos = [
+        ['category', 'estimated range'],
+        ['phase', 'date range'],
+        ['phase', 'key activities'],
+        ['phase', 'dates'],
+        ['phase', 'activities'],
+        ['category', 'range'],
+    ]
+    if row_lower in header_combos:
+        return True
+    if (len(row_lower) == 2
+            and row_lower[0] in ('category', 'phase', 'item')
+            and row_lower[1] in ('estimated range', 'date range', 'key activities',
+                                  'dates', 'activities', 'range', 'cost', 'amount')):
+        return True
+    return False
+
+
 def build_investment_flowables(rows, S):
-    """
-    Returns a list of KeepTogether flowables — one per sub-section —
-    so category headings never split from their rows across pages.
-    """
     if not rows:
         return []
 
@@ -210,7 +234,6 @@ def build_investment_flowables(rows, S):
                 ('FONTSIZE',    (0, 0), (-1, 0), 8),
                 ('LINEBELOW',   (0, 0), (-1, 0), 0.8, GOLD),
             ]
-        # Bold last row if it looks like a total (has a price)
         last = len(table_data) - 1
         if last >= offset and table_data[last][1]:
             cmds += [
@@ -220,10 +243,11 @@ def build_investment_flowables(rows, S):
         t.setStyle(TableStyle(cmds))
         return t
 
-    # Skip the CATEGORY/ESTIMATED RANGE header row — we re-add it ourselves
+    # Skip the CATEGORY/ESTIMATED RANGE header row
     data_rows = rows[1:] if rows and rows[0] == ['CATEGORY', 'ESTIMATED RANGE'] else rows
+    # Also skip any duplicate header rows that slipped through
+    data_rows = [r for r in data_rows if not is_duplicate_header(r)]
 
-    # Split into sub-sections: a row with no price starts a new block
     blocks = []
     current_heading = None
     current_rows = []
@@ -264,6 +288,11 @@ def build_timeline_table(rows):
     if not rows:
         return None
 
+    # Filter duplicate header rows
+    rows = [r for r in rows if not is_duplicate_header(r)]
+    if not rows:
+        return None
+
     phase_style = ParagraphStyle('TLPhase', fontName='Times-Roman',
                                   fontSize=9.5, textColor=DARK, leading=14,
                                   spaceAfter=0)
@@ -272,8 +301,8 @@ def build_timeline_table(rows):
                                      spaceAfter=0)
 
     wrapped = []
-    for i, row in enumerate(rows):
-        if i == 0:
+    for idx, row in enumerate(rows):
+        if idx == 0:
             wrapped.append(row)
         else:
             phase_text    = row[0] if len(row) > 0 else ''
@@ -380,6 +409,13 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
                 story.append(Spacer(1, 14))
         timeline_rows.clear()
 
+    KNOWN_ROOMS = {
+        'bathroom', 'kitchen', 'living room', 'master bedroom', 'bedroom',
+        'dining', 'dining room', 'office', 'balcony', 'kids room',
+        'guest room', 'hallway', 'entryway', 'studio', 'lounge',
+        'powder room', 'laundry', 'garage', 'terrace', 'garden'
+    }
+
     while i < len(lines):
         raw = lines[i]
         line = raw.strip()
@@ -421,7 +457,7 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
             story.append(Paragraph(line.strip('*').strip().title(), S['SubHead']))
             continue
 
-        # ALL CAPS subheader (e.g. LIVING ROOM)
+        # ALL CAPS subheader
         if line.isupper() and 2 < len(line) < 60 and '|' not in line:
             flush_table()
             if in_timeline:
@@ -433,13 +469,7 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
                 story.append(Paragraph(line.title(), S['SubHead']))
             continue
 
-        # Title Case room name — catches "Bathroom", "Living Room" etc. when Claude ignores ALL CAPS
-        KNOWN_ROOMS = {
-            'bathroom', 'kitchen', 'living room', 'master bedroom', 'bedroom',
-            'dining', 'dining room', 'office', 'balcony', 'kids room',
-            'guest room', 'hallway', 'entryway', 'studio', 'lounge',
-            'powder room', 'laundry', 'garage', 'terrace', 'garden'
-        }
+        # Title Case room name
         if (not in_investment and not in_timeline
                 and 2 < len(line) < 50 and '|' not in line and '$' not in line
                 and not line.startswith(('-', '—', '*'))
@@ -448,7 +478,7 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
             story.append(Paragraph(line.title(), S['SubHead']))
             continue
 
-        # Separator lines — including lone single dash/star
+        # Separator lines
         stripped = line.strip()
         if stripped in ('-', '–', '—', '*', '**'):
             continue
@@ -461,19 +491,8 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
         if '|' in line:
             if not is_table_separator(line):
                 row = parse_table_row(line)
-                if row:
-                    # Skip duplicate header rows (Claude sometimes re-outputs headers)
-                    row_lower = [c.lower().strip() for c in row]
-                    is_dup_header = (
-                        row_lower in [['category', 'estimated range'], ['phase', 'date range'],
-                                      ['phase', 'key activities'], ['category', 'estimated range'],
-                                      ['phase', 'dates'], ['phase', 'activities']]
-                        or (len(row) == 2 and row_lower[0] in ('category', 'phase')
-                            and row_lower[1] in ('estimated range', 'date range', 'key activities',
-                                                  'dates', 'activities', 'range'))
-                    )
-                    if not is_dup_header:
-                        table_rows.append(row)
+                if row and not is_duplicate_header(row):
+                    table_rows.append(row)
             continue
 
         # Italic signature
@@ -530,7 +549,15 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
             if 'recommend positioning' in line.lower():
                 story.append(Paragraph(line, S['Body']))
                 continue
-            if re.match(r'^(category|estimated)', line.lower()):
+            # Skip plain-text duplicate headers like "Category  Estimated Range"
+            line_lower = line.lower().strip()
+            if (line_lower in ('category  estimated range', 'category estimated range',
+                               'phase  date range', 'phase date range',
+                               'category | estimated range')
+                    or re.match(r'^category\s+estimated\s+range$', line_lower)
+                    or re.match(r'^phase\s+(date\s+range|key\s+activities)$', line_lower)):
+                continue
+            if re.match(r'^(category|estimated)', line_lower):
                 continue
             budget_row = try_parse_budget_line(line)
             if budget_row:
@@ -549,7 +576,6 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
 
         # Default: body text
         flush_table()
-        # In Next Steps, render plain paragraphs as bullet items
         if in_next_steps and len(line) > 20:
             story.append(Paragraph('— &nbsp;' + line, S['BulletItem']))
         else:
