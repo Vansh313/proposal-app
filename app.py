@@ -3,12 +3,14 @@ import io
 import re
 import base64
 import resend
+import requests
+import replicate
 from flask import Flask, request, jsonify
 from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
 from reportlab.lib.units import inch
 from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer, Table,
-                                 TableStyle, HRFlowable, KeepTogether)
+                                 TableStyle, HRFlowable, KeepTogether, Image as RLImage)
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY, TA_RIGHT
 
@@ -29,24 +31,77 @@ MARGIN = 0.85 * inch
 W = PAGE_W - 2 * MARGIN
 
 
+# ── IMAGE GENERATION ────────────────────────────────────────────────────────
+
+def generate_mood_image(style, mood, city, rooms, property_type=''):
+    """Generate a mood/atmosphere image using Replicate Stable Diffusion."""
+    try:
+        replicate_key = os.environ.get('REPLICATE_API_TOKEN', '')
+        if not replicate_key:
+            return None
+
+        os.environ['REPLICATE_API_TOKEN'] = replicate_key
+
+        room_list = rooms if isinstance(rooms, str) else ', '.join(rooms)
+        prompt = (
+            f"Luxury {style.lower()} interior design, {mood.lower()} atmosphere, "
+            f"{city} residence, {room_list}, "
+            f"professional architectural photography, soft natural lighting, "
+            f"editorial magazine style, high-end finishes, no people, "
+            f"warm tones, photorealistic, 8k quality"
+        )
+
+        output = replicate.run(
+            "stability-ai/stable-diffusion:ac732df83cea7fff18b8472768c88ad041fa750d"
+            "83a39d13950f3a0b4c2640c2",
+            input={
+                "prompt": prompt,
+                "negative_prompt": "cartoon, illustration, people, text, watermark, ugly, blurry",
+                "width": 768,
+                "height": 432,
+                "num_outputs": 1,
+                "num_inference_steps": 30,
+                "guidance_scale": 7.5,
+            }
+        )
+
+        if output and len(output) > 0:
+            image_url = output[0]
+            response = requests.get(image_url, timeout=30)
+            if response.status_code == 200:
+                return io.BytesIO(response.content)
+
+    except Exception as e:
+        print(f"Image generation failed: {e}")
+
+    return None
+
+
+def image_flowable(img_buffer, width=None, caption=None):
+    """Convert image buffer to ReportLab flowable."""
+    try:
+        if width is None:
+            width = W
+        img = RLImage(img_buffer, width=width, height=width * 9/16)
+        return img
+    except Exception as e:
+        print(f"Image flowable failed: {e}")
+        return None
+
+
+# ── SPACED CAPS ──────────────────────────────────────────────────────────────
+
 def spaced_caps(text):
-    """
-    Convert studio name to spaced caps for cover.
-    Uses &nbsp; so ReportLab doesn't collapse spaces.
-    'Design By Paula Studio' -> 'D E S I G N   B Y   P A U L A   S T U D I O'
-    """
     words = text.upper().split()
     spaced_words = [' &nbsp;'.join(list(word)) for word in words]
     return ' &nbsp;&nbsp; '.join(spaced_words)
 
 
 def draw_spaced_caps(canvas, text, x, y, font='Times-Roman', size=7.5, color=None, letter_spacing=4, word_spacing=14):
-    """Draw text with manual letter and word spacing directly on canvas."""
     if color:
         canvas.setFillColor(color)
     canvas.setFont(font, size)
     words = text.upper().split()
-    # Measure total width first for centering
     total_width = 0
     for wi, word in enumerate(words):
         for li, letter in enumerate(word):
@@ -55,14 +110,13 @@ def draw_spaced_caps(canvas, text, x, y, font='Times-Roman', size=7.5, color=Non
                 total_width += letter_spacing
         if wi < len(words) - 1:
             total_width += word_spacing
-    # Draw centered
     cx = x - total_width / 2
     for wi, word in enumerate(words):
         for li, letter in enumerate(word):
             canvas.drawString(cx, y, letter)
             cx += canvas.stringWidth(letter, font, size) + letter_spacing
         if wi < len(words) - 1:
-            cx += word_spacing - letter_spacing  # extra gap between words
+            cx += word_spacing - letter_spacing
 
 
 def cover_page_canvas(canvas, doc):
@@ -75,7 +129,6 @@ def cover_page_canvas(canvas, doc):
         canvas.setLineWidth(0.6)
         canvas.line(MARGIN, PAGE_H - band_h + 0.01*inch,
                     PAGE_W - MARGIN, PAGE_H - band_h + 0.01*inch)
-        # Draw spaced studio name directly on canvas
         draw_spaced_caps(canvas, doc._studio,
                          x=PAGE_W / 2,
                          y=PAGE_H - 0.72 * inch,
@@ -148,6 +201,10 @@ def make_styles():
     add('InvHeading',
         fontName='Times-Bold', fontSize=10.5,
         textColor=MID, spaceBefore=10, spaceAfter=4, leading=14)
+    add('ImageCaption',
+        fontName='Times-Italic', fontSize=8.5,
+        textColor=SUBTLE, alignment=TA_CENTER,
+        spaceAfter=12, leading=12)
 
     return s
 
@@ -202,7 +259,6 @@ def parse_table_row(line):
 
 
 def is_duplicate_header(row):
-    """Check if a table row is a duplicate header like Category/Estimated Range."""
     if not row:
         return False
     row_lower = [c.lower().strip() for c in row]
@@ -274,9 +330,7 @@ def build_investment_flowables(rows, S):
         t.setStyle(TableStyle(cmds))
         return t
 
-    # Skip the CATEGORY/ESTIMATED RANGE header row
     data_rows = rows[1:] if rows and rows[0] == ['CATEGORY', 'ESTIMATED RANGE'] else rows
-    # Also skip any duplicate header rows that slipped through
     data_rows = [r for r in data_rows if not is_duplicate_header(r)]
 
     blocks = []
@@ -319,7 +373,6 @@ def build_timeline_table(rows):
     if not rows:
         return None
 
-    # Filter duplicate header rows
     rows = [r for r in rows if not is_duplicate_header(r)]
     if not rows:
         return None
@@ -366,7 +419,9 @@ def build_timeline_table(rows):
     return t
 
 
-def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''):
+def build_pdf(proposal_text, designer_name, client_name, city, designer_email='',
+              style='Modern', mood='Elegant', rooms='', property_type='',
+              inspiration_image_url=''):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
         buffer, pagesize=letter,
@@ -383,8 +438,10 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
     S = make_styles()
     story = []
 
-    # ── COVER ───────────────────────────────────────────────────────────────
-    # Studio name is drawn directly on canvas with precise letter spacing
+    # ── Generate mood image ──────────────────────────────────────────────────
+    mood_img_buffer = generate_mood_image(style, mood, city, rooms, property_type)
+
+    # ── COVER ────────────────────────────────────────────────────────────────
     story.append(Spacer(1, 0.42 * inch))
     story.append(Paragraph("Interior Design", S['CoverSubtitle']))
     story.append(Paragraph("Proposal", S['CoverTitle']))
@@ -401,7 +458,7 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
     story.append(thin_rule())
     story.append(Spacer(1, 14))
 
-    # ── BODY PARSING ────────────────────────────────────────────────────────
+    # ── BODY PARSING ─────────────────────────────────────────────────────────
     proposal_text = re.sub(r'\n[ \t]*[-]{4,}[ \t]*\n', '\n', proposal_text)
     proposal_text = re.sub(r'\n[ \t]*[=]{4,}[ \t]*\n', '\n', proposal_text)
 
@@ -415,6 +472,7 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
     in_next_steps = False
     current_phase = None
     phase_activities = []
+    mood_image_inserted = False  # Track if we've inserted the mood image
 
     def flush_table():
         nonlocal table_rows
@@ -439,6 +497,21 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
                 story.append(Spacer(1, 14))
         timeline_rows.clear()
 
+    def insert_mood_image():
+        """Insert the AI-generated mood image after Design Vision section."""
+        nonlocal mood_image_inserted
+        if mood_img_buffer and not mood_image_inserted:
+            mood_img_buffer.seek(0)
+            img = image_flowable(mood_img_buffer, width=W)
+            if img:
+                story.append(Spacer(1, 8))
+                story.append(img)
+                story.append(Paragraph(
+                    f"AI-visualised mood for {client_name}'s {city} residence",
+                    S['ImageCaption']))
+                story.append(Spacer(1, 8))
+            mood_image_inserted = True
+
     KNOWN_ROOMS = {
         'bathroom', 'kitchen', 'living room', 'master bedroom', 'bedroom',
         'dining', 'dining room', 'office', 'balcony', 'kids room',
@@ -461,6 +534,11 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
         if num:
             flush_table()
             flush_timeline()
+
+            # Insert mood image after section 1 (Design Vision)
+            if section_counter == 1 and not mood_image_inserted:
+                insert_mood_image()
+
             in_investment = False
             in_timeline = False
             in_next_steps = False
@@ -579,7 +657,6 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
             if 'recommend positioning' in line.lower():
                 story.append(Paragraph(line, S['Body']))
                 continue
-            # Skip plain-text duplicate headers like "Category  Estimated Range"
             line_lower = line.lower().strip()
             if (line_lower in ('category  estimated range', 'category estimated range',
                                'phase  date range', 'phase date range',
@@ -614,7 +691,11 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
     flush_table()
     flush_timeline()
 
-    # ── CLOSING FOOTER ──────────────────────────────────────────────────────
+    # If image never inserted (short proposal), insert before closing
+    if mood_img_buffer and not mood_image_inserted:
+        insert_mood_image()
+
+    # ── CLOSING FOOTER ───────────────────────────────────────────────────────
     story.append(Spacer(1, 28))
     story.append(gold_rule())
     story.append(Paragraph(
@@ -639,11 +720,16 @@ def generate():
         if not data:
             return jsonify({"error": "No JSON body"}), 400
 
-        proposal_text   = data.get('proposal_text', '')
-        designer        = data.get('designer', 'Your Designer')
-        client          = data.get('client', 'Valued Client')
-        city            = data.get('city', '')
-        recipient_email = data.get('recipient_email', '')
+        proposal_text         = data.get('proposal_text', '')
+        designer              = data.get('designer', 'Your Designer')
+        client                = data.get('client', 'Valued Client')
+        city                  = data.get('city', '')
+        recipient_email       = data.get('recipient_email', '')
+        style                 = data.get('style', 'Modern')
+        mood                  = data.get('mood', 'Elegant')
+        rooms                 = data.get('rooms', '')
+        property_type         = data.get('property_type', '')
+        inspiration_image_url = data.get('inspiration_image_url', '')
 
         if not recipient_email:
             return jsonify({"error": "recipient_email required"}), 400
@@ -653,8 +739,12 @@ def generate():
         studio_sfx = "" if any(designer.lower().rstrip().endswith(s) for s in suffixes) else " Studio"
         designer_studio = f"{designer}{studio_sfx}"
 
-        pdf_bytes = build_pdf(proposal_text, designer, client, city, designer_email)
-        pdf_b64   = base64.b64encode(pdf_bytes).decode('utf-8')
+        pdf_bytes = build_pdf(
+            proposal_text, designer, client, city, designer_email,
+            style=style, mood=mood, rooms=rooms, property_type=property_type,
+            inspiration_image_url=inspiration_image_url
+        )
+        pdf_b64 = base64.b64encode(pdf_bytes).decode('utf-8')
 
         resend.api_key = os.environ.get('RESEND_API_KEY', '')
         from_email     = os.environ.get('FROM_EMAIL', 'onboarding@resend.dev')
