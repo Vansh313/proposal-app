@@ -33,22 +33,13 @@ W = PAGE_W - 2 * MARGIN
 
 # ── IMAGE GENERATION ────────────────────────────────────────────────────────
 
-def generate_mood_image(style, mood, city, rooms, property_type=''):
+def run_flux(prompt):
+    """Run a single FLUX image generation and return BytesIO buffer."""
     try:
         replicate_key = os.environ.get('REPLICATE_API_TOKEN', '')
         if not replicate_key:
             return None
-
         os.environ['REPLICATE_API_TOKEN'] = replicate_key
-
-        room_list = rooms if isinstance(rooms, str) else ', '.join(rooms)
-        prompt = (
-            f"Luxury {style.lower()} interior design, {mood.lower()} atmosphere, "
-            f"{city} residence, {room_list}, "
-            f"professional architectural photography, soft natural lighting, "
-            f"editorial magazine style, high-end finishes, no people, "
-            f"warm tones, photorealistic, 8k quality"
-        )
 
         output = replicate.run(
             "black-forest-labs/flux-schnell",
@@ -62,17 +53,56 @@ def generate_mood_image(style, mood, city, rooms, property_type=''):
                 "output_format": "jpg",
             }
         )
-
         if output and len(output) > 0:
-            image_url = output[0]
-            response = requests.get(image_url, timeout=30)
+            response = requests.get(output[0], timeout=30)
             if response.status_code == 200:
                 return io.BytesIO(response.content)
-
     except Exception as e:
         print(f"Image generation failed: {e}")
-
     return None
+
+
+def generate_all_images(style, mood, city, rooms, property_type=''):
+    """Generate 3 images in parallel: mood, rooms, closing."""
+    import concurrent.futures
+
+    room_list = rooms if isinstance(rooms, str) else ', '.join(rooms)
+    style_l = style.lower()
+    mood_l = mood.lower()
+
+    prompts = [
+        # Image 1 — after Design Vision: overall mood
+        (
+            f"Luxury {style_l} interior design, {mood_l} atmosphere, "
+            f"{city} residence, professional architectural photography, "
+            f"soft natural lighting, editorial magazine style, "
+            f"high-end finishes, no people, warm tones, photorealistic, 8k quality"
+        ),
+        # Image 2 — after Room-By-Room: specific rooms
+        (
+            f"Luxury {style_l} {room_list} interior, {mood_l} mood, "
+            f"detailed room design, high-end materials, natural light, "
+            f"no people, editorial photography, photorealistic, 8k quality"
+        ),
+        # Image 3 — before Signature Moment: elegant closing detail
+        (
+            f"Luxury {style_l} interior design detail, {mood_l} atmosphere, "
+            f"close-up of premium materials and finishes, decorative accents, "
+            f"soft bokeh, editorial style, no people, photorealistic, 8k quality"
+        ),
+    ]
+
+    images = [None, None, None]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+        futures = {executor.submit(run_flux, p): i for i, p in enumerate(prompts)}
+        for future in concurrent.futures.as_completed(futures):
+            idx = futures[future]
+            try:
+                images[idx] = future.result()
+            except Exception as e:
+                print(f"Image {idx} failed: {e}")
+
+    return images  # [mood_img, rooms_img, closing_img]
 
 
 def image_flowable(img_buffer, width=None, caption=None):
@@ -435,7 +465,10 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
     S = make_styles()
     story = []
 
-    mood_img_buffer = generate_mood_image(style, mood, city, rooms, property_type)
+    images = generate_all_images(style, mood, city, rooms, property_type)
+    mood_img_buffer    = images[0]  # After Design Vision
+    rooms_img_buffer   = images[1]  # After Room-By-Room
+    closing_img_buffer = images[2]  # Before Signature Moment
 
     # ── COVER ────────────────────────────────────────────────────────────────
     story.append(Spacer(1, 0.42 * inch))
@@ -469,6 +502,8 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
     current_phase = None
     phase_activities = []
     mood_image_inserted = False
+    rooms_image_inserted = False
+    closing_image_inserted = False
 
     def flush_table():
         nonlocal table_rows
@@ -493,19 +528,17 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
                 story.append(Spacer(1, 14))
         timeline_rows.clear()
 
-    def insert_mood_image():
-        nonlocal mood_image_inserted
-        if mood_img_buffer and not mood_image_inserted:
-            mood_img_buffer.seek(0)
-            img = image_flowable(mood_img_buffer, width=W)
+    def insert_image(buf, caption, inserted_flag):
+        if buf and not inserted_flag:
+            buf.seek(0)
+            img = image_flowable(buf, width=W)
             if img:
                 story.append(Spacer(1, 8))
                 story.append(img)
-                story.append(Paragraph(
-                    f"AI-visualised mood for {client_name}'s {city} residence",
-                    S['ImageCaption']))
+                story.append(Paragraph(caption, S['ImageCaption']))
                 story.append(Spacer(1, 8))
-            mood_image_inserted = True
+            return True
+        return inserted_flag
 
     KNOWN_ROOMS = {
         'bathroom', 'kitchen', 'living room', 'master bedroom', 'bedroom',
@@ -531,7 +564,15 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
             flush_timeline()
 
             if section_counter == 1 and not mood_image_inserted:
-                insert_mood_image()
+                mood_image_inserted = insert_image(
+                    mood_img_buffer,
+                    f"AI-visualised mood for {client_name}'s {city} residence",
+                    mood_image_inserted)
+            if section_counter == 2 and not rooms_image_inserted:
+                rooms_image_inserted = insert_image(
+                    rooms_img_buffer,
+                    f"AI-visualised room direction for {client_name}'s {city} residence",
+                    rooms_image_inserted)
 
             in_investment = False
             in_timeline = False
@@ -607,6 +648,11 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
         if line.startswith('*') and line.endswith('*') and not line.startswith('**'):
             flush_table()
             flush_timeline()
+            # Insert closing image before signature moment
+            closing_image_inserted = insert_image(
+                closing_img_buffer,
+                f"Design detail · {client_name}'s {city} residence",
+                closing_image_inserted)
             sig_text = line.strip('*').strip()
             story.append(Spacer(1, 10))
             story.append(gold_rule(width='50%'))
@@ -691,8 +737,16 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
     flush_table()
     flush_timeline()
 
-    if mood_img_buffer and not mood_image_inserted:
-        insert_mood_image()
+    if not mood_image_inserted:
+        mood_image_inserted = insert_image(
+            mood_img_buffer,
+            f"AI-visualised mood for {client_name}'s {city} residence",
+            mood_image_inserted)
+    if not rooms_image_inserted:
+        rooms_image_inserted = insert_image(
+            rooms_img_buffer,
+            f"AI-visualised room direction for {client_name}'s {city} residence",
+            rooms_image_inserted)
 
     # ── CLOSING FOOTER ───────────────────────────────────────────────────────
     story.append(Spacer(1, 28))
