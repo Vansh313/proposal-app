@@ -513,16 +513,27 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
         timeline_rows.clear()
 
     def insert_image(buf, caption, inserted_flag):
-        if buf and not inserted_flag:
-            buf.seek(0)
-            img = image_flowable(buf, width=W)
-            if img:
-                story.append(Spacer(1, 8))
-                story.append(img)
-                story.append(Paragraph(caption, S['ImageCaption']))
-                story.append(Spacer(1, 8))
+        if inserted_flag:
             return True
-        return inserted_flag
+        if not buf:
+            print(f"insert_image: buf is None for caption={caption}")
+            return False
+        try:
+            buf.seek(0)
+            data = buf.read()
+            print(f"insert_image: buf size={len(data)} for caption={caption}")
+            if not data:
+                return False
+            img_buf = io.BytesIO(data)
+            img = RLImage(img_buf, width=W, height=W * 9/16)
+            story.append(Spacer(1, 8))
+            story.append(img)
+            story.append(Paragraph(caption, S['ImageCaption']))
+            story.append(Spacer(1, 8))
+            return True
+        except Exception as e:
+            print(f"insert_image error: {e}")
+            return False
 
     KNOWN_ROOMS = {
         'bathroom', 'kitchen', 'living room', 'master bedroom', 'bedroom',
