@@ -52,17 +52,16 @@ def generate_mood_image(style, mood, city, rooms, property_type=''):
         )
 
         output = replicate.run(
-            "stability-ai/stable-diffusion:ac732df83cea7fff18b8472768c88ad041fa750d"
-            "83a39d13950f3a0b4c2640c2",
+            "black-forest-labs/flux-schnell",
             input={
-                "prompt": prompt,
-                "negative_prompt": "cartoon, illustration, people, text, watermark, ugly, blurry",
-                "width": 768,
-                "height": 432,
-                "num_outputs": 1,
-                "num_inference_steps": 30,
-                "guidance_scale": 7.5,
-            }
+    "prompt": prompt,
+    "width": 768,
+    "height": 432,
+    "num_outputs": 1,
+    "num_inference_steps": 4,
+    "guidance_scale": 3.5,
+    "output_format": "jpg",
+}
         )
 
         if output and len(output) > 0:
