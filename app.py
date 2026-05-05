@@ -61,26 +61,38 @@ def run_flux(prompt, label="image"):
             return None
 
         item = output[0]
-        print(f"run_flux [{label}]: output type={type(item)}")
+        print(f"run_flux [{label}]: output type={type(item)}, attrs={[a for a in dir(item) if not a.startswith('_')][:10]}")
 
-        # FLUX schnell returns a FileOutput object with .read() method
-        if hasattr(item, 'read'):
+        # Strategy 1: get URL from .url attribute (most reliable for FileOutput)
+        url = None
+        if hasattr(item, 'url'):
+            url = item.url
+            print(f"run_flux [{label}]: got .url attribute: {str(url)[:80]}")
+        
+        # Strategy 2: try reading bytes directly
+        if not url and hasattr(item, 'read'):
             raw = item.read()
             print(f"run_flux [{label}]: read {len(raw)} bytes via .read()")
             if raw:
                 return io.BytesIO(raw)
-            print(f"run_flux [{label}]: .read() returned empty bytes")
 
-        # Fallback: treat as URL string
-        url = str(item)
-        print(f"run_flux [{label}]: fetching URL {url[:80]}")
-        response = requests.get(url, timeout=30)
-        if response.status_code == 200:
-            raw = response.content
-            print(f"run_flux [{label}]: fetched {len(raw)} bytes from URL")
-            return io.BytesIO(raw)
+        # Strategy 3: str() conversion — works if item is already a URL string
+        if not url:
+            url = str(item)
+            print(f"run_flux [{label}]: str(item)={url[:80]}")
+
+        # Fetch image from URL
+        if url and str(url).startswith('http'):
+            print(f"run_flux [{label}]: fetching URL")
+            response = requests.get(str(url), timeout=30)
+            if response.status_code == 200:
+                raw = response.content
+                print(f"run_flux [{label}]: fetched {len(raw)} bytes from URL")
+                return io.BytesIO(raw)
+            else:
+                print(f"run_flux [{label}]: URL fetch failed status={response.status_code}")
         else:
-            print(f"run_flux [{label}]: URL fetch failed status={response.status_code}")
+            print(f"run_flux [{label}]: no valid URL found, url={str(url)[:80]}")
 
     except Exception as e:
         print(f"run_flux [{label}]: exception: {e}")
