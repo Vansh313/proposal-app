@@ -68,46 +68,25 @@ def run_flux(prompt):
 
 
 def generate_all_images(style, mood, city, rooms, property_type=''):
-    """Generate 3 images in parallel: mood, rooms, closing."""
-    import concurrent.futures
-
+    """Generate 3 images sequentially."""
     room_list = rooms if isinstance(rooms, str) else ', '.join(rooms)
     style_l = style.lower()
     mood_l = mood.lower()
 
-    prompts = [
-        # Image 1 — after Design Vision: overall mood
-        (
-            f"Luxury {style_l} interior design, {mood_l} atmosphere, "
-            f"{city} residence, professional architectural photography, "
-            f"soft natural lighting, editorial magazine style, "
-            f"high-end finishes, no people, warm tones, photorealistic, 8k quality"
-        ),
-        # Image 2 — after Room-By-Room: specific rooms
-        (
-            f"Luxury {style_l} {room_list} interior, {mood_l} mood, "
-            f"detailed room design, high-end materials, natural light, "
-            f"no people, editorial photography, photorealistic, 8k quality"
-        ),
-        # Image 3 — before Signature Moment: elegant closing detail
-        (
-            f"Luxury {style_l} interior design detail, {mood_l} atmosphere, "
-            f"close-up of premium materials and finishes, decorative accents, "
-            f"soft bokeh, editorial style, no people, photorealistic, 8k quality"
-        ),
-    ]
+    p1 = (f"Luxury {style_l} interior design, {mood_l} atmosphere, "
+          f"{city} residence, professional architectural photography, "
+          f"soft natural lighting, editorial magazine style, "
+          f"high-end finishes, no people, warm tones, photorealistic, 8k quality")
 
-    images = [None, None, None]
-    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
-        futures = {executor.submit(run_flux, p): i for i, p in enumerate(prompts)}
-        for future in concurrent.futures.as_completed(futures):
-            idx = futures[future]
-            try:
-                images[idx] = future.result()
-            except Exception as e:
-                print(f"Image {idx} failed: {e}")
+    p2 = (f"Luxury {style_l} {room_list} interior, {mood_l} mood, "
+          f"detailed room design, high-end materials, natural light, "
+          f"no people, editorial photography, photorealistic, 8k quality")
 
-    return images  # [mood_img, rooms_img, closing_img]
+    p3 = (f"Luxury {style_l} interior design detail, {mood_l} atmosphere, "
+          f"close-up of premium materials and finishes, decorative accents, "
+          f"soft bokeh, editorial style, no people, photorealistic, 8k quality")
+
+    return [run_flux(p1), run_flux(p2), run_flux(p3)]
 
 
 def image_flowable(img_buffer, width=None, caption=None):
