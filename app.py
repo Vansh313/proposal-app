@@ -5,6 +5,7 @@ import base64
 import resend
 import requests
 import replicate
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from flask import Flask, request, jsonify
 from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
@@ -87,7 +88,7 @@ def run_flux(prompt, label="image"):
 
 
 def generate_all_images(style, mood, city, rooms, property_type=''):
-    """Generate 3 images sequentially, return list of BytesIO or None."""
+    """Generate 3 images in parallel to stay within Railway timeout."""
     room_list = rooms if isinstance(rooms, str) else ', '.join(rooms)
     style_l = style.lower()
     mood_l = mood.lower()
@@ -105,10 +106,23 @@ def generate_all_images(style, mood, city, rooms, property_type=''):
           f"close-up of premium materials and finishes, decorative accents, "
           f"soft bokeh, editorial style, no people, photorealistic, 8k quality")
 
-    results = []
-    for prompt, label in [(p1, "mood"), (p2, "rooms"), (p3, "closing")]:
+    prompts = [(p1, "mood"), (p2, "rooms"), (p3, "closing")]
+    results = [None, None, None]
+
+    def generate_one(idx, prompt, label):
         buf = run_flux(prompt, label)
-        results.append(buf)
+        print(f"generate_all_images: [{label}] done, success={buf is not None}")
+        return idx, buf
+
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        futures = {executor.submit(generate_one, i, p, l): i
+                   for i, (p, l) in enumerate(prompts)}
+        for future in futures:
+            try:
+                idx, buf = future.result(timeout=35)
+                results[idx] = buf
+            except Exception as e:
+                print(f"generate_all_images: thread failed: {e}")
 
     return results
 
