@@ -34,7 +34,6 @@ W = PAGE_W - 2 * MARGIN
 # ── IMAGE GENERATION ────────────────────────────────────────────────────────
 
 def generate_mood_image(style, mood, city, rooms, property_type=''):
-    """Generate a mood/atmosphere image using Replicate Stable Diffusion."""
     try:
         replicate_key = os.environ.get('REPLICATE_API_TOKEN', '')
         if not replicate_key:
@@ -54,14 +53,14 @@ def generate_mood_image(style, mood, city, rooms, property_type=''):
         output = replicate.run(
             "black-forest-labs/flux-schnell",
             input={
-    "prompt": prompt,
-    "width": 768,
-    "height": 432,
-    "num_outputs": 1,
-    "num_inference_steps": 4,
-    "guidance_scale": 3.5,
-    "output_format": "jpg",
-}
+                "prompt": prompt,
+                "width": 768,
+                "height": 432,
+                "num_outputs": 1,
+                "num_inference_steps": 4,
+                "guidance_scale": 3.5,
+                "output_format": "jpg",
+            }
         )
 
         if output and len(output) > 0:
@@ -77,7 +76,6 @@ def generate_mood_image(style, mood, city, rooms, property_type=''):
 
 
 def image_flowable(img_buffer, width=None, caption=None):
-    """Convert image buffer to ReportLab flowable."""
     try:
         if width is None:
             width = W
@@ -437,7 +435,6 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
     S = make_styles()
     story = []
 
-    # ── Generate mood image ──────────────────────────────────────────────────
     mood_img_buffer = generate_mood_image(style, mood, city, rooms, property_type)
 
     # ── COVER ────────────────────────────────────────────────────────────────
@@ -471,7 +468,7 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
     in_next_steps = False
     current_phase = None
     phase_activities = []
-    mood_image_inserted = False  # Track if we've inserted the mood image
+    mood_image_inserted = False
 
     def flush_table():
         nonlocal table_rows
@@ -497,7 +494,6 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
         timeline_rows.clear()
 
     def insert_mood_image():
-        """Insert the AI-generated mood image after Design Vision section."""
         nonlocal mood_image_inserted
         if mood_img_buffer and not mood_image_inserted:
             mood_img_buffer.seek(0)
@@ -534,7 +530,6 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
             flush_table()
             flush_timeline()
 
-            # Insert mood image after section 1 (Design Vision)
             if section_counter == 1 and not mood_image_inserted:
                 insert_mood_image()
 
@@ -594,12 +589,18 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
             if dash_ratio >= 0.5:
                 continue
 
-        # Pipe table rows
+        # Pipe table rows — route to timeline or investment based on context
         if '|' in line:
             if not is_table_separator(line):
                 row = parse_table_row(line)
                 if row and not is_duplicate_header(row):
-                    table_rows.append(row)
+                    if in_timeline:
+                        if len(row) >= 2:
+                            timeline_rows.append([row[0], row[1]])
+                        elif len(row) == 1:
+                            timeline_rows.append([row[0], ''])
+                    else:
+                        table_rows.append(row)
             continue
 
         # Italic signature
@@ -690,7 +691,6 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
     flush_table()
     flush_timeline()
 
-    # If image never inserted (short proposal), insert before closing
     if mood_img_buffer and not mood_image_inserted:
         insert_mood_image()
 
