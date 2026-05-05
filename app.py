@@ -33,14 +33,15 @@ W = PAGE_W - 2 * MARGIN
 
 # ── IMAGE GENERATION ────────────────────────────────────────────────────────
 
-def run_flux(prompt):
-    """Run a single FLUX image generation and return BytesIO buffer."""
+def run_flux(prompt, label="image"):
+    """Run a single FLUX image generation and return BytesIO buffer with raw bytes."""
     try:
         replicate_key = os.environ.get('REPLICATE_API_TOKEN', '')
         if not replicate_key:
+            print(f"run_flux [{label}]: no API token")
             return None
-        os.environ['REPLICATE_API_TOKEN'] = replicate_key
 
+        print(f"run_flux [{label}]: starting generation")
         output = replicate.run(
             "black-forest-labs/flux-schnell",
             input={
@@ -53,22 +54,40 @@ def run_flux(prompt):
                 "output_format": "jpg",
             }
         )
-        if output and len(output) > 0:
-            item = output[0]
-            # FLUX schnell returns a FileOutput object with .read() method
-            if hasattr(item, 'read'):
-                return io.BytesIO(item.read())
-            # Fallback: treat as URL string
-            response = requests.get(str(item), timeout=30)
-            if response.status_code == 200:
-                return io.BytesIO(response.content)
+
+        if not output or len(output) == 0:
+            print(f"run_flux [{label}]: empty output")
+            return None
+
+        item = output[0]
+        print(f"run_flux [{label}]: output type={type(item)}")
+
+        # FLUX schnell returns a FileOutput object with .read() method
+        if hasattr(item, 'read'):
+            raw = item.read()
+            print(f"run_flux [{label}]: read {len(raw)} bytes via .read()")
+            if raw:
+                return io.BytesIO(raw)
+            print(f"run_flux [{label}]: .read() returned empty bytes")
+
+        # Fallback: treat as URL string
+        url = str(item)
+        print(f"run_flux [{label}]: fetching URL {url[:80]}")
+        response = requests.get(url, timeout=30)
+        if response.status_code == 200:
+            raw = response.content
+            print(f"run_flux [{label}]: fetched {len(raw)} bytes from URL")
+            return io.BytesIO(raw)
+        else:
+            print(f"run_flux [{label}]: URL fetch failed status={response.status_code}")
+
     except Exception as e:
-        print(f"Image generation failed: {e}")
+        print(f"run_flux [{label}]: exception: {e}")
     return None
 
 
 def generate_all_images(style, mood, city, rooms, property_type=''):
-    """Generate 3 images sequentially."""
+    """Generate 3 images sequentially, return list of BytesIO or None."""
     room_list = rooms if isinstance(rooms, str) else ', '.join(rooms)
     style_l = style.lower()
     mood_l = mood.lower()
@@ -86,18 +105,12 @@ def generate_all_images(style, mood, city, rooms, property_type=''):
           f"close-up of premium materials and finishes, decorative accents, "
           f"soft bokeh, editorial style, no people, photorealistic, 8k quality")
 
-    return [run_flux(p1), run_flux(p2), run_flux(p3)]
+    results = []
+    for prompt, label in [(p1, "mood"), (p2, "rooms"), (p3, "closing")]:
+        buf = run_flux(prompt, label)
+        results.append(buf)
 
-
-def image_flowable(img_buffer, width=None, caption=None):
-    try:
-        if width is None:
-            width = W
-        img = RLImage(img_buffer, width=width, height=width * 9/16)
-        return img
-    except Exception as e:
-        print(f"Image flowable failed: {e}")
-        return None
+    return results
 
 
 # ── SPACED CAPS ──────────────────────────────────────────────────────────────
@@ -430,6 +443,30 @@ def build_timeline_table(rows):
     return t
 
 
+def insert_image(story, buf, caption, S):
+    """Insert image into story. Returns True if successful."""
+    if not buf:
+        print(f"insert_image: buf is None for caption='{caption}'")
+        return False
+    try:
+        buf.seek(0)
+        data = buf.read()
+        print(f"insert_image: buf size={len(data)} for caption='{caption}'")
+        if not data:
+            print(f"insert_image: empty data for caption='{caption}'")
+            return False
+        img_buf = io.BytesIO(data)
+        img = RLImage(img_buf, width=W, height=W * 9/16)
+        story.append(Spacer(1, 8))
+        story.append(img)
+        story.append(Paragraph(caption, S['ImageCaption']))
+        story.append(Spacer(1, 8))
+        return True
+    except Exception as e:
+        print(f"insert_image error for caption='{caption}': {e}")
+        return False
+
+
 def build_pdf(proposal_text, designer_name, client_name, city, designer_email='',
               style='Modern', mood='Elegant', rooms='', property_type='',
               inspiration_image_url=''):
@@ -449,10 +486,13 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
     S = make_styles()
     story = []
 
+    # Generate all 3 images upfront
+    print("Generating images...")
     images = generate_all_images(style, mood, city, rooms, property_type)
-    mood_img_buffer    = images[0]  # After Design Vision
-    rooms_img_buffer   = images[1]  # After Room-By-Room
-    closing_img_buffer = images[2]  # Before Signature Moment
+    mood_img_buffer    = images[0]  # After section 1 (Design Vision)
+    rooms_img_buffer   = images[1]  # After section 2 (Room-By-Room)
+    closing_img_buffer = images[2]  # Before signature moment
+    print(f"Images ready: mood={mood_img_buffer is not None}, rooms={rooms_img_buffer is not None}, closing={closing_img_buffer is not None}")
 
     # ── COVER ────────────────────────────────────────────────────────────────
     story.append(Spacer(1, 0.42 * inch))
@@ -489,6 +529,9 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
     rooms_image_inserted = False
     closing_image_inserted = False
 
+    # Track seen subheadings to prevent duplicates (e.g. "Office" appearing twice)
+    seen_subheadings = set()
+
     def flush_table():
         nonlocal table_rows
         if table_rows:
@@ -511,29 +554,6 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
                 story.append(t)
                 story.append(Spacer(1, 14))
         timeline_rows.clear()
-
-    def insert_image(buf, caption, inserted_flag):
-        if inserted_flag:
-            return True
-        if not buf:
-            print(f"insert_image: buf is None for caption={caption}")
-            return False
-        try:
-            buf.seek(0)
-            data = buf.read()
-            print(f"insert_image: buf size={len(data)} for caption={caption}")
-            if not data:
-                return False
-            img_buf = io.BytesIO(data)
-            img = RLImage(img_buf, width=W, height=W * 9/16)
-            story.append(Spacer(1, 8))
-            story.append(img)
-            story.append(Paragraph(caption, S['ImageCaption']))
-            story.append(Spacer(1, 8))
-            return True
-        except Exception as e:
-            print(f"insert_image error: {e}")
-            return False
 
     KNOWN_ROOMS = {
         'bathroom', 'kitchen', 'living room', 'master bedroom', 'bedroom',
@@ -558,21 +578,25 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
             flush_table()
             flush_timeline()
 
+            # Insert mood image after section 1 ends (when section 2 starts)
             if section_counter == 1 and not mood_image_inserted:
                 mood_image_inserted = insert_image(
-                    mood_img_buffer,
-                    f"AI-visualised mood for {client_name}'s {city} residence",
-                    mood_image_inserted)
+                    story, mood_img_buffer,
+                    f"AI-visualised mood for {client_name}'s {city} residence", S)
+
+            # Insert rooms image after section 2 ends (when section 3 starts)
             if section_counter == 2 and not rooms_image_inserted:
                 rooms_image_inserted = insert_image(
-                    rooms_img_buffer,
-                    f"AI-visualised room direction for {client_name}'s {city} residence",
-                    rooms_image_inserted)
+                    story, rooms_img_buffer,
+                    f"AI-visualised room direction for {client_name}'s {city} residence", S)
 
             in_investment = False
             in_timeline = False
             in_next_steps = False
             section_counter += 1
+            # Reset seen subheadings per section
+            seen_subheadings = set()
+
             num_str = f"0 {section_counter}" if section_counter < 10 else str(section_counter)
             in_investment  = ('investment' in title.lower() or 'budget' in title.lower())
             in_timeline    = ('timeline' in title.lower() or 'schedule' in title.lower())
@@ -592,7 +616,10 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
         # Bold subheader **text**
         if line.startswith('**') and line.endswith('**'):
             flush_table()
-            story.append(Paragraph(line.strip('*').strip().title(), S['SubHead']))
+            heading_text = line.strip('*').strip().title()
+            if heading_text.lower() not in seen_subheadings:
+                seen_subheadings.add(heading_text.lower())
+                story.append(Paragraph(heading_text, S['SubHead']))
             continue
 
         # ALL CAPS subheader
@@ -604,7 +631,10 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
                 current_phase = line.title()
                 phase_activities = []
             else:
-                story.append(Paragraph(line.title(), S['SubHead']))
+                heading_text = line.title()
+                if heading_text.lower() not in seen_subheadings:
+                    seen_subheadings.add(heading_text.lower())
+                    story.append(Paragraph(heading_text, S['SubHead']))
             continue
 
         # Title Case room name
@@ -613,7 +643,10 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
                 and not line.startswith(('-', '—', '*'))
                 and line.lower() in KNOWN_ROOMS):
             flush_table()
-            story.append(Paragraph(line.title(), S['SubHead']))
+            heading_text = line.title()
+            if heading_text.lower() not in seen_subheadings:
+                seen_subheadings.add(heading_text.lower())
+                story.append(Paragraph(heading_text, S['SubHead']))
             continue
 
         # Separator lines
@@ -644,10 +677,10 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
             flush_table()
             flush_timeline()
             # Insert closing image before signature moment
-            closing_image_inserted = insert_image(
-                closing_img_buffer,
-                f"Design detail · {client_name}'s {city} residence",
-                closing_image_inserted)
+            if not closing_image_inserted:
+                closing_image_inserted = insert_image(
+                    story, closing_img_buffer,
+                    f"Design detail · {client_name}'s {city} residence", S)
             sig_text = line.strip('*').strip()
             story.append(Spacer(1, 10))
             story.append(gold_rule(width='50%'))
@@ -732,16 +765,16 @@ def build_pdf(proposal_text, designer_name, client_name, city, designer_email=''
     flush_table()
     flush_timeline()
 
-    if not mood_image_inserted:
-        mood_image_inserted = insert_image(
-            mood_img_buffer,
-            f"AI-visualised mood for {client_name}'s {city} residence",
-            mood_image_inserted)
-    if not rooms_image_inserted:
-        rooms_image_inserted = insert_image(
-            rooms_img_buffer,
-            f"AI-visualised room direction for {client_name}'s {city} residence",
-            rooms_image_inserted)
+    # Fallback: insert any images not yet placed
+    if not mood_image_inserted and mood_img_buffer:
+        insert_image(story, mood_img_buffer,
+                     f"AI-visualised mood for {client_name}'s {city} residence", S)
+    if not rooms_image_inserted and rooms_img_buffer:
+        insert_image(story, rooms_img_buffer,
+                     f"AI-visualised room direction for {client_name}'s {city} residence", S)
+    if not closing_image_inserted and closing_img_buffer:
+        insert_image(story, closing_img_buffer,
+                     f"Design detail · {client_name}'s {city} residence", S)
 
     # ── CLOSING FOOTER ───────────────────────────────────────────────────────
     story.append(Spacer(1, 28))
