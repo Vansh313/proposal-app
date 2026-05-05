@@ -54,7 +54,12 @@ def run_flux(prompt):
             }
         )
         if output and len(output) > 0:
-            response = requests.get(output[0], timeout=30)
+            item = output[0]
+            # FLUX schnell returns a FileOutput object with .read() method
+            if hasattr(item, 'read'):
+                return io.BytesIO(item.read())
+            # Fallback: treat as URL string
+            response = requests.get(str(item), timeout=30)
             if response.status_code == 200:
                 return io.BytesIO(response.content)
     except Exception as e:
